@@ -736,7 +736,10 @@ textarea {
 /* metrics + trace pane                                         */
 /* ============================================================ */
 .metrics {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  max-height: 48vh;
+  /* never let metrics eat the column; trace keeps room */
+  overflow-y: auto;
   padding: var(--sp-4);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -885,7 +888,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  overflow: hidden;
+  overflow: scroll;
   animation: fade 200ms var(--ease);
 }
 
@@ -953,7 +956,8 @@ textarea {
   color: var(--text-primary);
 }
 
-.kv-line .q {
+.kv-line.q,
+.q {
   font-family: var(--font-mono);
   font-size: var(--fs-caption);
   color: var(--text-secondary);
@@ -1074,11 +1078,8 @@ textarea {
   font-size: var(--fs-caption);
   color: var(--text-primary);
   line-height: 1.35;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  /* show full memory text, wrap instead of clipping */
 }
 
 .rt-num {
