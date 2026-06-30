@@ -5,6 +5,7 @@ import {
   useMessage,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
+import remarkGfm from "remark-gfm";
 import { ArrowUp, Bot, Brain, MessageSquare, User } from "lucide-react";
 import { store, useSelectedMessageId } from "../store";
 import type { MemoryEventType, TurnMeta } from "../types";
@@ -17,13 +18,19 @@ const MARKDOWN =
   "[&_code]:font-mono [&_code]:text-body-sm [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:rounded " +
   "[&_pre]:bg-raised [&_pre]:border [&_pre]:border-border [&_pre]:rounded-md [&_pre]:p-4 [&_pre]:overflow-x-auto " +
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0 " +
-  "[&_a]:text-interactive [&_a]:no-underline [&_a:hover]:underline";
+  "[&_a]:text-interactive [&_a]:no-underline [&_a:hover]:underline " +
+  "[&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-body-sm " +
+  "[&_th]:border [&_th]:border-border [&_th]:bg-raised [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:font-bold " +
+  "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top " +
+  "[&_blockquote]:border-l-2 [&_blockquote]:border-line [&_blockquote]:pl-3 [&_blockquote]:text-muted [&_blockquote]:my-2";
 
 const ROLE_LABEL =
   "inline-flex items-center gap-1.5 font-mono text-label uppercase [&_svg]:size-3";
 
 function MarkdownText() {
-  return <MarkdownTextPrimitive className={MARKDOWN} />;
+  return (
+    <MarkdownTextPrimitive className={MARKDOWN} remarkPlugins={[remarkGfm]} />
+  );
 }
 
 function UserMessage() {
