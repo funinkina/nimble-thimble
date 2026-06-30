@@ -85,6 +85,27 @@ class MemoryOut(BaseModel):
     created_at: str
     updated_at: str
     decay_score: float
+    revision_count: int = 1
+
+
+class MemoryRevisionOut(BaseModel):
+    id: str
+    memory_id: str
+    revision_index: int
+    change_type: Literal[
+        "created", "refined", "superseded", "reinforced", "edited", "forgotten"
+    ]
+    old_text: Optional[str]
+    new_text: Optional[str]
+    old_confidence: Optional[float]
+    new_confidence: Optional[float]
+    old_status: Optional[str]
+    new_status: Optional[str]
+    source_message_id: Optional[str]
+    source_excerpt: Optional[str]
+    reason: Optional[str]
+    cosine: Optional[float]
+    created_at: str
 
 
 class MemoryEvent(BaseModel):

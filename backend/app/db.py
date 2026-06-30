@@ -44,6 +44,27 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS memory_revisions (
+    id              TEXT PRIMARY KEY,
+    memory_id       TEXT NOT NULL,
+    revision_index  INTEGER NOT NULL,
+    change_type     TEXT NOT NULL,   -- created|refined|superseded|reinforced|edited|forgotten
+    old_text        TEXT,
+    new_text        TEXT,
+    old_confidence  REAL,
+    new_confidence  REAL,
+    old_status      TEXT,
+    new_status      TEXT,
+    source_message_id TEXT,
+    source_excerpt  TEXT,
+    reason          TEXT,
+    cosine          REAL,
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_revisions_memory
+    ON memory_revisions(memory_id, revision_index);
+
 CREATE TABLE IF NOT EXISTS messages (
     id          TEXT PRIMARY KEY,
     conversation_id TEXT,
@@ -116,6 +137,80 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.executescript(CONV_INDEXES)
 
 
+def _backfill_revisions(conn: sqlite3.Connection) -> None:
+    """Seed memory_revisions from legacy append-only data so no timeline starts
+    empty. Idempotent: skips entirely once any revision exists. Every memory gets
+    a 'created' entry; legacy superseded/updated rows also get a linkage entry
+    pointing at the row that replaced them (via supersedes_id)."""
+    if conn.execute("SELECT 1 FROM memory_revisions LIMIT 1").fetchone():
+        return
+    rows = conn.execute(
+        "SELECT id, text, status, confidence, source_message_id, source_excerpt, "
+        "reason, supersedes_id, created_at FROM memories ORDER BY created_at ASC, rowid ASC"
+    ).fetchall()
+    if not rows:
+        return
+    successor = {}  # parent_id -> child row that superseded it
+    for r in rows:
+        if r["supersedes_id"]:
+            successor[r["supersedes_id"]] = r
+    for r in rows:
+        conn.execute(
+            "INSERT INTO memory_revisions(id, memory_id, revision_index, change_type, "
+            "old_text, new_text, old_confidence, new_confidence, old_status, new_status, "
+            "source_message_id, source_excerpt, reason, cosine, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                uuid_hex(),
+                r["id"],
+                0,
+                "created",
+                None,
+                r["text"],
+                None,
+                r["confidence"],
+                None,
+                "active",
+                r["source_message_id"],
+                r["source_excerpt"],
+                r["reason"],
+                None,
+                r["created_at"],
+            ),
+        )
+        child = successor.get(r["id"])
+        if child is not None and r["status"] in ("superseded", "updated"):
+            conn.execute(
+                "INSERT INTO memory_revisions(id, memory_id, revision_index, change_type, "
+                "old_text, new_text, old_confidence, new_confidence, old_status, new_status, "
+                "source_message_id, source_excerpt, reason, cosine, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    uuid_hex(),
+                    r["id"],
+                    1,
+                    "refined" if r["status"] == "updated" else "superseded",
+                    r["text"],
+                    child["text"],
+                    r["confidence"],
+                    child["confidence"],
+                    r["status"],
+                    "active",
+                    child["source_message_id"],
+                    child["source_excerpt"],
+                    child["reason"],
+                    None,
+                    child["created_at"],
+                ),
+            )
+
+
+def uuid_hex() -> str:
+    import uuid
+
+    return uuid.uuid4().hex
+
+
 def connect() -> sqlite3.Connection:
     global _conn
     if _conn is not None:
@@ -128,6 +223,7 @@ def connect() -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.executescript(VEC_SCHEMA)
     _migrate(conn)
+    _backfill_revisions(conn)
     conn.commit()
     _conn = conn
     return conn

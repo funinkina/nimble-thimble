@@ -25,6 +25,33 @@ export interface Memory {
   created_at: string;
   updated_at: string;
   decay_score: number;
+  revision_count: number;
+}
+
+export type RevisionChangeType =
+  | "created"
+  | "refined"
+  | "superseded"
+  | "reinforced"
+  | "edited"
+  | "forgotten";
+
+export interface MemoryRevision {
+  id: string;
+  memory_id: string;
+  revision_index: number;
+  change_type: RevisionChangeType;
+  old_text: string | null;
+  new_text: string | null;
+  old_confidence: number | null;
+  new_confidence: number | null;
+  old_status: string | null;
+  new_status: string | null;
+  source_message_id: string | null;
+  source_excerpt: string | null;
+  reason: string | null;
+  cosine: number | null;
+  created_at: string;
 }
 
 export interface MemoryEvent {

@@ -1,8 +1,17 @@
-import { useState } from "react";
-import { Check, GitBranch, Pencil, Trash2, X, EyeOff } from "lucide-react";
-import { deleteMemory, patchMemory } from "../api";
+import { useEffect, useState } from "react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  History,
+  Pencil,
+  Trash2,
+  X,
+  EyeOff,
+} from "lucide-react";
+import { deleteMemory, getMemoryRevisions, patchMemory } from "../api";
 import { store } from "../store";
-import type { Memory } from "../types";
+import type { Memory, MemoryRevision } from "../types";
 
 type ActionState =
   | { kind: "idle" }
@@ -18,6 +27,14 @@ const STATUS_TAG: Record<string, string> = {
   superseded: "border-accent text-accent",
   forgotten: "border-line text-faint",
 };
+const CHANGE_TAG: Record<string, string> = {
+  created: "border-success text-success",
+  refined: "border-warning text-warning",
+  superseded: "border-accent text-accent",
+  reinforced: "border-line text-muted",
+  edited: "border-line text-muted",
+  forgotten: "border-line text-faint",
+};
 const ACT = "inline-flex items-center gap-[5px] font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing disabled:cursor-default disabled:text-faint [&_svg]:size-[13px]";
 const ACT_STATUS_TONE = { busy: "text-faint", ok: "text-success", err: "text-accent" };
 
@@ -27,14 +44,32 @@ function decayFill(d: number): string {
   return "bg-accent";
 }
 
-function shortId(id: string): string {
-  return id.slice(0, 8);
+function fmtConf(c: number | null): string {
+  return c == null ? "—" : c.toFixed(2);
 }
 
 export function MemoryCard({ mem }: { mem: Memory }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(mem.text);
   const [action, setAction] = useState<ActionState>({ kind: "idle" });
+  const [showHistory, setShowHistory] = useState(false);
+  const [revisions, setRevisions] = useState<MemoryRevision[] | null>(null);
+
+  useEffect(() => {
+    if (!showHistory || revisions) return;
+    let live = true;
+    getMemoryRevisions(mem.id)
+      .then((r) => live && setRevisions(r))
+      .catch(() => live && setRevisions([]));
+    return () => {
+      live = false;
+    };
+  }, [showHistory, revisions, mem.id]);
+
+  // a new write bumps revision_count; drop the cache so the timeline refetches
+  useEffect(() => {
+    setRevisions(null);
+  }, [mem.revision_count]);
 
   const flash = (kind: "ok" | "err", label: string) => {
     setAction({ kind, label });
@@ -135,20 +170,56 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         </div>
       )}
 
-      {(mem.supersedes_id || mem.superseded_by) && (
-        <div className="flex flex-col gap-[3px]">
-          {mem.superseded_by && (
-            <div className="flex items-center gap-1.5 font-mono text-label tracking-[0.06em] text-muted [&_svg]:size-3 [&_svg]:text-faint">
-              <GitBranch strokeWidth={1.5} />
-              REPLACED BY{" "}
-              <span className="text-accent">{shortId(mem.superseded_by)}</span>
-            </div>
-          )}
-          {mem.supersedes_id && (
-            <div className="flex items-center gap-1.5 font-mono text-label tracking-[0.06em] text-muted [&_svg]:size-3 [&_svg]:text-faint">
-              <GitBranch strokeWidth={1.5} />
-              REPLACES <span className="text-primary">{shortId(mem.supersedes_id)}</span>
-            </div>
+      {mem.revision_count > 1 && (
+        <div className="flex flex-col gap-2">
+          <button
+            className={`${ACT} self-start hover:text-primary`}
+            onClick={() => setShowHistory((s) => !s)}
+          >
+            {showHistory ? (
+              <ChevronDown strokeWidth={1.5} />
+            ) : (
+              <ChevronRight strokeWidth={1.5} />
+            )}
+            <History strokeWidth={1.5} />
+            HISTORY ({mem.revision_count})
+          </button>
+          {showHistory && (
+            <ol className="flex flex-col gap-2 border-l border-line pl-3">
+              {revisions === null ? (
+                <li className="font-mono text-label uppercase text-faint">Loading…</li>
+              ) : (
+                [...revisions].reverse().map((rev) => (
+                  <li key={rev.id} className="flex flex-col gap-1 animate-fade">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`${TAG} ${CHANGE_TAG[rev.change_type] ?? "border-line text-muted"}`}
+                      >
+                        {rev.change_type}
+                      </span>
+                      <span className="font-mono text-label text-faint">
+                        {new Date(rev.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    {rev.old_text && rev.old_text !== rev.new_text && (
+                      <div className="font-sans text-body-sm leading-[1.4] text-faint line-through">
+                        {rev.old_text}
+                      </div>
+                    )}
+                    {rev.new_text && (
+                      <div className="font-sans text-body-sm leading-[1.4] text-muted">
+                        {rev.new_text}
+                      </div>
+                    )}
+                    {rev.old_confidence !== rev.new_confidence && (
+                      <div className="font-mono text-label text-faint">
+                        conf {fmtConf(rev.old_confidence)} → {fmtConf(rev.new_confidence)}
+                      </div>
+                    )}
+                  </li>
+                ))
+              )}
+            </ol>
           )}
         </div>
       )}

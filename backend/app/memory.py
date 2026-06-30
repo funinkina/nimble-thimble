@@ -16,6 +16,11 @@ def _title_from(msg: str, limit: int = 48) -> str:
     return t if len(t) <= limit else t[: limit - 1].rstrip() + "…"
 
 
+def _nudge(c: float) -> float:
+    """Move confidence toward 1.0 by a fixed fraction of the remaining gap."""
+    return min(1.0, c + config.CONFIDENCE_STEP * (1.0 - c))
+
+
 def _active_neighbour(emb: list[float], conversation_id: str) -> tuple[str, float] | None:
     """Nearest ACTIVE memory to an embedding, as (id, cosine)."""
     for mem_id, cos in store.knn(emb, config.TOP_K_CANDIDATES, conversation_id):
@@ -31,8 +36,21 @@ def _handle_forget(
     emb = embeddings.embed_one(subject)
     hit = _active_neighbour(emb, conversation_id)
     if hit and hit[1] >= config.RETRIEVE_THRESHOLD:
-        store.set_status(hit[0], Status.forgotten)
         row = store.get_row(hit[0])
+        store.set_status(hit[0], Status.forgotten)
+        store.add_revision(
+            memory_id=hit[0],
+            change_type="forgotten",
+            old_text=row["text"],
+            new_text=row["text"],
+            old_confidence=row["confidence"],
+            new_confidence=row["confidence"],
+            old_status=row["status"],
+            new_status=Status.forgotten.value,
+            source_message_id=message_id,
+            reason=f"User asked to forget '{subject}'.",
+            cosine=round(hit[1], 4),
+        )
         return MemoryEvent(
             type="forgotten",
             memory_id=hit[0],
@@ -92,6 +110,16 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
                 embedding=emb,
                 conversation_id=conversation_id,
             )
+            store.add_revision(
+                memory_id=mem_id,
+                change_type="created",
+                new_text=cand.text,
+                new_confidence=cand.confidence,
+                new_status=Status.active.value,
+                source_message_id=message_id,
+                source_excerpt=cand.source_excerpt,
+                reason="New fact, no similar memory.",
+            )
             events.append(
                 MemoryEvent(type="created", memory_id=mem_id, detail=cand.text)
             )
@@ -114,7 +142,22 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
 
         if rel == Relation.duplicate:
             # same meaning, no new info -> drop and reinforce the existing memory
-            store.bump_usage([neigh_id])
+            new_conf = _nudge(neigh["confidence"])
+            store.reinforce_memory(neigh_id, new_conf)
+            store.add_revision(
+                memory_id=neigh_id,
+                change_type="reinforced",
+                old_text=neigh["text"],
+                new_text=neigh["text"],
+                old_confidence=neigh["confidence"],
+                new_confidence=new_conf,
+                old_status=neigh["status"],
+                new_status=neigh["status"],
+                source_message_id=message_id,
+                source_excerpt=cand.source_excerpt,
+                reason=judgment.reason,
+                cosine=round(cos, 4),
+            )
             events.append(
                 MemoryEvent(
                     type="duplicate",
@@ -134,23 +177,42 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
             continue
 
         if rel in (Relation.update, Relation.supersede):
-            new_status = Status.updated if rel == Relation.update else Status.superseded
-            store.set_status(neigh_id, new_status)
-            verb = "Refines" if rel == Relation.update else "Contradicts"
-            mem_id = store.add_memory(
+            # Fold into the SAME canonical row: mutate in place, append a revision,
+            # carry decay strength forward. No new row, stable id.
+            refine = rel == Relation.update
+            verb = "Refines" if refine else "Contradicts"
+            # refine agrees -> raise confidence; contradiction -> reset to the new claim
+            new_conf = (
+                _nudge(max(neigh["confidence"], cand.confidence))
+                if refine
+                else cand.confidence
+            )
+            store.revise_memory(
+                neigh_id,
                 text=cand.text,
-                scope=cand.scope,
+                embedding=emb,
+                confidence=new_conf,
+                status=Status.active,
+                bump=True,
+            )
+            store.add_revision(
+                memory_id=neigh_id,
+                change_type="refined" if refine else "superseded",
+                old_text=neigh["text"],
+                new_text=cand.text,
+                old_confidence=neigh["confidence"],
+                new_confidence=new_conf,
+                old_status=neigh["status"],
+                new_status=Status.active.value,
                 source_message_id=message_id,
                 source_excerpt=cand.source_excerpt,
                 reason=f"{verb} earlier memory: {judgment.reason}",
-                confidence=cand.confidence,
-                embedding=emb,
-                conversation_id=conversation_id,
-                supersedes_id=neigh_id,
+                cosine=round(cos, 4),
             )
+            mem_id = neigh_id  # stable
             events.append(
                 MemoryEvent(
-                    type="updated" if rel == Relation.update else "superseded",
+                    type="updated" if refine else "superseded",
                     memory_id=mem_id,
                     detail=f"{verb.lower()} {neigh_id[:8]}: {cand.text}",
                 )
@@ -163,7 +225,8 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
                     "neighbour_id": neigh_id,
                     "cosine": round(cos, 4),
                     "reason": judgment.reason,
-                    "action": new_status.value,
+                    # keep metrics vocab: updated/superseded counts in metrics.py
+                    "action": "updated" if refine else "superseded",
                     "memory_id": mem_id,
                     "llm": j_meta,
                 }
@@ -180,6 +243,17 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
             confidence=cand.confidence,
             embedding=emb,
             conversation_id=conversation_id,
+        )
+        store.add_revision(
+            memory_id=mem_id,
+            change_type="created",
+            new_text=cand.text,
+            new_confidence=cand.confidence,
+            new_status=Status.active.value,
+            source_message_id=message_id,
+            source_excerpt=cand.source_excerpt,
+            reason=f"Distinct from similar-looking memory: {judgment.reason}",
+            cosine=round(cos, 4),
         )
         events.append(MemoryEvent(type="created", memory_id=mem_id, detail=cand.text))
         resolutions.append(

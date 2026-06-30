@@ -32,6 +32,9 @@ TOP_K_RETRIEVE = 5  # memories injected into a reply
 VEC_OVERFETCH = 25  # pull this many from vec index before status filtering
 VEC_PREFETCH = 100  # raw vec rows fetched before conversation+status filtering
 
+# --- confidence accumulation (deterministic; no LLM call) ---
+CONFIDENCE_STEP = 0.15  # nudge toward 1.0 on refine-agree / reinforce: c + STEP*(1-c)
+
 # --- decay (computed at retrieval, never stored stale) ---
 DECAY_HALF_LIFE_DAYS = 14.0  # recency half-life
 USAGE_SATURATION = 5.0  # use_count at which usage weight is ~saturated

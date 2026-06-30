@@ -60,6 +60,10 @@ def traces(mid: str) -> list[dict]:
     return requests.get(f"{BASE}/traces/{mid}", timeout=30).json()
 
 
+def revisions(mem_id: str) -> list[dict]:
+    return requests.get(f"{BASE}/memories/{mem_id}/revisions", timeout=30).json()
+
+
 def active_texts() -> list[str]:
     return [m["text"].lower() for m in memories(status="active")]
 
@@ -90,10 +94,17 @@ def main():
             veg["scope"] in ("preference", "user_profile", "fact", "context"),
             veg["scope"],
         )
+    veg_id = veg["id"] if veg else None
+    if veg:
+        check(
+            "fresh memory has a single 'created' revision",
+            [rv["change_type"] for rv in revisions(veg_id)] == ["created"],
+        )
     st = traces(r["message_id"])
     check("extract trace recorded", any(t["stage"] == "extract" for t in st))
 
-    print("\n=== Scenario 2: UPDATE / CONFLICT ===")
+    print("\n=== Scenario 2: UPDATE / CONFLICT (in-place fold) ===")
+    active_before = len(memories(status="active"))
     r = chat("Actually, I'm not vegetarian anymore — I started eating fish.")
     evt_types = [e["type"] for e in r["memory_events"]]
     check(
@@ -101,24 +112,49 @@ def main():
         any(t in evt_types for t in ("superseded", "updated")),
         f"events={evt_types}",
     )
+    # The fact is updated IN PLACE: same canonical id, no new row spawned.
+    conflict_evt = next(
+        (e for e in r["memory_events"] if e["type"] in ("superseded", "updated")), None
+    )
     check(
-        "no active memory still says plain 'vegetarian'",
-        not any("vegetarian" in t and "not" not in t for t in active_texts()),
+        "conflict event reuses the same canonical memory id",
+        conflict_evt is not None and conflict_evt["memory_id"] == veg_id,
+        f"event_id={(conflict_evt or {}).get('memory_id')} veg_id={veg_id}",
+    )
+    _neg = ("not", "no longer", "anymore", "stopped", "former", "used to")
+    check(
+        "no active memory still positively claims 'vegetarian'",
+        not any(
+            "vegetarian" in t and not any(n in t for n in _neg)
+            for t in active_texts()
+        ),
         f"active={active_texts()}",
     )
-    old = [m for m in memories() if m["status"] in ("superseded", "updated")]
-    check("old memory flipped to superseded/updated", len(old) >= 1)
-    new_active = next(
-        (m for m in memories(status="active") if m["supersedes_id"]), None
+    check(
+        "active memory count did not grow (folded in place)",
+        len(memories(status="active")) <= active_before,
+        f"{active_before} -> {len(memories(status='active'))}",
+    )
+    # The timeline carries the change: a refined/superseded revision over the old text.
+    revs = revisions(veg_id) if veg_id else []
+    conflict_rev = next(
+        (rv for rv in revs if rv["change_type"] in ("refined", "superseded")), None
     )
     check(
-        "new active memory links back via supersedes_id",
-        new_active is not None,
-        (new_active or {}).get("text", ""),
+        "a refined/superseded revision was appended",
+        conflict_rev is not None,
+        f"revisions={[rv['change_type'] for rv in revs]}",
     )
-    if old:
+    if conflict_rev:
         check(
-            "superseded card exposes its successor", bool(old[0].get("superseded_by"))
+            "revision records the prior 'vegetarian' text",
+            "vegetarian" in (conflict_rev["old_text"] or "").lower(),
+            repr(conflict_rev["old_text"]),
+        )
+        check(
+            "revision moved confidence",
+            conflict_rev["old_confidence"] != conflict_rev["new_confidence"],
+            f"{conflict_rev['old_confidence']} -> {conflict_rev['new_confidence']}",
         )
     check(
         "conflict trace recorded",

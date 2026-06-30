@@ -55,9 +55,12 @@ so it lives in plain code.)
 Thresholds and decay constants live in one block in `config.py` — visible and
 tunable, not scattered through the logic.
 
-## Status state machine
+## Canonical memories + revision timeline
 
-Memories are never silently destroyed; they transition and stay inspectable.
+A memory is **one canonical row with a stable id**. It is never duplicated per
+turn: when a fact is refined or contradicted, the row is updated **in place** and
+the change is appended to a `memory_revisions` timeline. Nothing is silently
+destroyed — the full history stays inspectable.
 
 ```
                          new candidate
@@ -66,26 +69,36 @@ Memories are never silently destroyed; they transition and stay inspectable.
    cos < CONFLICT_LOW   CONFLICT_LOW ≤ cos < DEDUP    cos ≥ DEDUP
    (or no neighbour)    → judge_conflict()            → judge_conflict()
         │                     │                            │
-     CREATE              relation:                    duplicate → DROP
-     active            ├ update  → old⇒UPDATED,         (reinforce existing)
-                       │           new⇒active (supersedes_id→old)
-                       ├ supersede→ old⇒SUPERSEDED,
-                       │           new⇒active (supersedes_id→old)
-                       └ unrelated→ CREATE active (false match)
+     CREATE              relation:                    duplicate → DROP candidate
+     active            ├ update  → fold IN PLACE:        REINFORCE existing
+     + 'created' rev   │           text re-embedded,     (bump usage, nudge
+                       │           confidence nudged↑,    confidence, append
+                       │           +'refined' rev          'reinforced' rev)
+                       ├ supersede→ fold IN PLACE:
+                       │           text re-embedded,
+                       │           confidence reset to candidate,
+                       │           +'superseded' rev
+                       └ unrelated→ CREATE active (false match) +'created' rev
 
-   explicit "forget X" → matched active memory ⇒ FORGOTTEN
+   explicit "forget X" → matched active memory ⇒ FORGOTTEN +'forgotten' rev
 ```
 
-- `active` — live, retrievable.
-- `updated` — refined by a newer memory (same subject, new/sharper value).
-- `superseded` — contradicted by a newer memory.
-- `forgotten` — explicitly removed by the user (still shown under the Forgotten filter).
+The canonical row stays `active` across refinements; its **decay strength carries
+forward** (`use_count`/`last_used_at` are not reset), so a long-reinforced memory
+keeps its rank when refined. The LLM's `relation` judgment (refinement vs
+contradiction) only picks the revision's `change_type` and the confidence rule —
+the in-place mutation, the confidence formula (`c + CONFIDENCE_STEP·(1−c)`), and
+the revision write are all deterministic code in `memory.py`/`store.py`.
 
-`supersedes_id` on the new memory points back at what it replaced; the API derives
-`superseded_by` for the old one, so the inspector can link a superseded card to
-its successor in both directions. The distinction between *update* and *supersede*
-is the LLM's `relation` judgment — refinement vs contradiction — and the reason is
-stored on the new memory.
+`memory_revisions` (one row per change: `change_type`, `old_text`/`new_text`,
+`old_confidence`/`new_confidence`, status delta, source, reason, cosine) is the
+lineage. `GET /memories/{id}/revisions` returns the ordered timeline; the inspector
+card renders it under an expandable **HISTORY (N)**. Statuses are now just
+`active` and `forgotten` for new data; `updated`/`superseded` survive only on
+legacy rows (a guarded one-shot backfill seeds every existing memory a `created`
+revision, and legacy `supersedes_id` chains a linkage revision, so no history is
+lost). `confidence` is no longer frozen at insert — it accumulates on the canonical
+row.
 
 ## Decay model
 
@@ -132,8 +145,8 @@ over them — no separate bookkeeping to drift.
 The brief is that the *frontend* exposes everything — so all of it is on screen,
 not in a console: a three-pane shell of **chat** (assistant-ui), **memory
 inspector** (cards showing text, scope, status, source evidence, the why-stored
-reason, confidence, use count, decay bar, supersede links, and edit/forget/delete
-actions), and **trace + metrics** (the per-turn pipeline drawer plus live
+reason, confidence, use count, decay bar, an expandable revision timeline, and
+edit/forget/delete actions), and **trace + metrics** (the per-turn pipeline drawer plus live
 counters).
 
 The visual language is **Nothing design, light mode**: a printed-technical-manual

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import sqlite_vec
 
 from . import db, decay
-from .models import MemoryOut, Scope, Status, TraceOut
+from .models import MemoryOut, MemoryRevisionOut, Scope, Status, TraceOut
 
 
 def now_iso() -> str:
@@ -71,6 +71,11 @@ def delete_conversation(cid: str) -> None:
     def _do(c):
         c.execute(
             "DELETE FROM vec_memories WHERE memory_id IN "
+            "(SELECT id FROM memories WHERE conversation_id=?)",
+            (cid,),
+        )
+        c.execute(
+            "DELETE FROM memory_revisions WHERE memory_id IN "
             "(SELECT id FROM memories WHERE conversation_id=?)",
             (cid,),
         )
@@ -212,10 +217,145 @@ def update_text(mem_id: str, text: str, embedding: list[float]) -> None:
     db.write(_do)
 
 
+def revise_memory(
+    mem_id: str,
+    *,
+    text: str,
+    embedding: list[float],
+    confidence: float,
+    status: Status = Status.active,
+    bump: bool = True,
+) -> None:
+    """In-place update of a canonical memory: new text + re-embed + new confidence,
+    carrying use_count/last_used_at forward (decay strength survives refinement).
+    Replaces the vec row so KNN stays consistent."""
+    blob = sqlite_vec.serialize_float32(embedding)
+    ts = now_iso()
+
+    def _do(c):
+        if bump:
+            c.execute(
+                "UPDATE memories SET text=?, confidence=?, status=?, "
+                "use_count=use_count+1, last_used_at=?, updated_at=? WHERE id=?",
+                (text, confidence, status.value, ts, ts, mem_id),
+            )
+        else:
+            c.execute(
+                "UPDATE memories SET text=?, confidence=?, status=?, updated_at=? WHERE id=?",
+                (text, confidence, status.value, ts, mem_id),
+            )
+        c.execute("DELETE FROM vec_memories WHERE memory_id=?", (mem_id,))
+        c.execute(
+            "INSERT INTO vec_memories(memory_id, embedding) VALUES (?,?)",
+            (mem_id, blob),
+        )
+
+    db.write(_do)
+
+
+def reinforce_memory(mem_id: str, confidence: float) -> None:
+    """Duplicate reinforcement: bump usage + nudge confidence, text unchanged."""
+    ts = now_iso()
+    db.write(
+        lambda c: c.execute(
+            "UPDATE memories SET use_count=use_count+1, last_used_at=?, "
+            "confidence=?, updated_at=? WHERE id=?",
+            (ts, confidence, ts, mem_id),
+        )
+    )
+
+
+def add_revision(
+    *,
+    memory_id: str,
+    change_type: str,
+    old_text: str | None = None,
+    new_text: str | None = None,
+    old_confidence: float | None = None,
+    new_confidence: float | None = None,
+    old_status: str | None = None,
+    new_status: str | None = None,
+    source_message_id: str | None = None,
+    source_excerpt: str | None = None,
+    reason: str | None = None,
+    cosine: float | None = None,
+) -> str:
+    rev_id = _id()
+    ts = now_iso()
+
+    def _do(c):
+        row = c.execute(
+            "SELECT COALESCE(MAX(revision_index), -1) AS m FROM memory_revisions WHERE memory_id=?",
+            (memory_id,),
+        ).fetchone()
+        idx = row["m"] + 1
+        c.execute(
+            "INSERT INTO memory_revisions(id, memory_id, revision_index, change_type, "
+            "old_text, new_text, old_confidence, new_confidence, old_status, new_status, "
+            "source_message_id, source_excerpt, reason, cosine, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                rev_id,
+                memory_id,
+                idx,
+                change_type,
+                old_text,
+                new_text,
+                old_confidence,
+                new_confidence,
+                old_status,
+                new_status,
+                source_message_id,
+                source_excerpt,
+                reason,
+                cosine,
+                ts,
+            ),
+        )
+
+    db.write(_do)
+    return rev_id
+
+
+def list_revisions(memory_id: str) -> list[MemoryRevisionOut]:
+    rows = db.query(
+        "SELECT * FROM memory_revisions WHERE memory_id=? ORDER BY revision_index ASC",
+        (memory_id,),
+    )
+    return [
+        MemoryRevisionOut(
+            id=r["id"],
+            memory_id=r["memory_id"],
+            revision_index=r["revision_index"],
+            change_type=r["change_type"],
+            old_text=r["old_text"],
+            new_text=r["new_text"],
+            old_confidence=r["old_confidence"],
+            new_confidence=r["new_confidence"],
+            old_status=r["old_status"],
+            new_status=r["new_status"],
+            source_message_id=r["source_message_id"],
+            source_excerpt=r["source_excerpt"],
+            reason=r["reason"],
+            cosine=r["cosine"],
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+
+def revision_count(memory_id: str) -> int:
+    r = db.query_one(
+        "SELECT COUNT(*) AS n FROM memory_revisions WHERE memory_id=?", (memory_id,)
+    )
+    return r["n"] if r else 0
+
+
 def delete_memory(mem_id: str) -> None:
     def _do(c):
         c.execute("DELETE FROM memories WHERE id=?", (mem_id,))
         c.execute("DELETE FROM vec_memories WHERE memory_id=?", (mem_id,))
+        c.execute("DELETE FROM memory_revisions WHERE memory_id=?", (mem_id,))
 
     db.write(_do)
 
@@ -286,6 +426,7 @@ def row_to_out(r) -> MemoryOut:
         decay_score=decay.decay_score(
             r["last_used_at"], r["created_at"], r["use_count"]
         ),
+        revision_count=revision_count(r["id"]),
     )
 
 

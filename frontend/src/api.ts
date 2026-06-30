@@ -2,6 +2,7 @@ import type {
   ChatResponse,
   Conversation,
   Memory,
+  MemoryRevision,
   MemoryStatus,
   Metrics,
   RestoredMessage,
@@ -44,6 +45,10 @@ export function getMemories(
   if (status) q.set("status", status);
   if (scope) q.set("scope", scope);
   return req<Memory[]>(`/memories?${q.toString()}`);
+}
+
+export function getMemoryRevisions(id: string): Promise<MemoryRevision[]> {
+  return req<MemoryRevision[]>(`/memories/${id}/revisions`);
 }
 
 export function listConversations(): Promise<Conversation[]> {
