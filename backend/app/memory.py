@@ -84,7 +84,12 @@ def retrieve_memories(
     out: list[dict] = []
     for mid, info in rows:
         row = info["row"]
-        d = decay_score(row["last_used_at"], row["created_at"], row["use_count"])
+        d = decay_score(
+            row["last_used_at"],
+            row["created_at"],
+            row["use_count"],
+            pinned=bool(row["pinned"]),
+        )
         out.append(
             {
                 "memory_id": mid,

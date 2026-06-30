@@ -159,6 +159,35 @@ function TurnEvents() {
   return <EventChips meta={meta} />;
 }
 
+// Inline grounding: the memories that actually fed this reply, shown right under
+// it as clickable chips so "why did it remember that" maps to a card without
+// opening the trace pane. Click flashes + scrolls the matching memory card.
+function GroundingChips() {
+  const meta = useMessage(
+    (m) => m.metadata?.custom as unknown as TurnMeta | undefined,
+  );
+  const running = useMessage((m) => m.status?.type === "running");
+  if (running || !meta || meta.retrieved.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 border-t border-dashed border-border pt-2">
+      <span className="font-mono text-label uppercase text-faint">
+        Grounded in
+      </span>
+      {meta.retrieved.map((r) => (
+        <button
+          key={r.memory_id}
+          className="inline-flex max-w-[240px] items-center gap-1 rounded border border-line bg-surface px-1.5 py-0.5 font-sans text-caption text-muted transition-colors duration-150 ease-nothing cursor-pointer hover:border-interactive hover:text-interactive [&_svg]:size-3 [&_svg]:flex-none"
+          title="Highlight the memory this reply drew on"
+          onClick={() => store.highlightMemory(r.memory_id)}
+        >
+          <Brain strokeWidth={1.5} />
+          <span className="truncate">{r.text}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="flex flex-col gap-2 border-b border-border bg-surface px-6 py-4 animate-fade text-primary">
@@ -174,6 +203,7 @@ function AssistantMessage() {
       </div>
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
       <Thinking />
+      <GroundingChips />
     </MessagePrimitive.Root>
   );
 }

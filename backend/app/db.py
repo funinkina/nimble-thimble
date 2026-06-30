@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS memories (
     reason          TEXT,
     confidence      REAL NOT NULL DEFAULT 0.0,
     supersedes_id   TEXT,
+    pinned          INTEGER NOT NULL DEFAULT 0,
     use_count       INTEGER NOT NULL DEFAULT 0,
     last_used_at    TEXT,
     created_at      TEXT NOT NULL,
@@ -156,8 +157,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {t} ADD COLUMN conversation_id TEXT")
             altered = True
 
-    # Any row with a NULL conversation_id (legacy data, or just-added column)
-    # belongs to the DEFAULT conversation.
+    mcols = [c["name"] for c in conn.execute("PRAGMA table_info(memories)").fetchall()]
+    if "pinned" not in mcols:
+        conn.execute(
+            "ALTER TABLE memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"
+        )
+
     orphans = conn.execute(
         "SELECT COUNT(*) AS n FROM messages WHERE conversation_id IS NULL"
     ).fetchone()["n"]

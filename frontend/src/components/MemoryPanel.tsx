@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Brain, ChevronDown } from "lucide-react";
-import { getMemories } from "../api";
+import { Brain, ChevronDown, Search, X } from "lucide-react";
+import { getMemories, searchMemories } from "../api";
 import {
   store,
   useHighlightedMemoryId,
@@ -93,13 +93,19 @@ export function MemoryPanel() {
   const touchedIds = useTouchedIds();
   const [status, setStatus] = useState<MemoryStatus | "all">("all");
   const [scope, setScope] = useState<Scope | "all">("all");
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const searching = debounced.trim().length > 0;
 
-  // When a trace id is *clicked* (nonce bumps), if the target card is hidden by a
-  // filter, drop the filters so it renders. Gated on the nonce so it fires only on
-  // the click itself — never when the user later narrows a filter to empty results.
+  // Debounce the search box so each keystroke doesn't fire a request.
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(query), 180);
+    return () => window.clearTimeout(t);
+  }, [query]);
+
   const lastHighlight = useRef(highlightNonce);
   useEffect(() => {
     if (highlightNonce === lastHighlight.current) return;
@@ -117,11 +123,15 @@ export function MemoryPanel() {
     }
     let live = true;
     setLoading(true);
-    getMemories(
-      conversationId,
-      status === "all" ? undefined : status,
-      scope === "all" ? undefined : scope,
-    )
+    const q = debounced.trim();
+    const load = q
+      ? searchMemories(conversationId, q)
+      : getMemories(
+        conversationId,
+        status === "all" ? undefined : status,
+        scope === "all" ? undefined : scope,
+      );
+    load
       .then((m) => {
         if (!live) return;
         setMemories(m);
@@ -135,7 +145,7 @@ export function MemoryPanel() {
     return () => {
       live = false;
     };
-  }, [status, scope, turnSeq, conversationId]);
+  }, [status, scope, debounced, turnSeq, conversationId]);
 
   // Float cards touched this turn to the top; stable within each group so the
   // server's existing order is otherwise preserved.
@@ -159,7 +169,30 @@ export function MemoryPanel() {
         </span>
       </header>
 
-      <div className="grid grid-cols-[auto_1fr_auto_1fr] border-b border-border">
+      <div className="flex items-center gap-2 border-b border-border bg-surface px-6 py-2.5">
+        <Search strokeWidth={1.5} className="size-3.5 flex-none text-faint" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search all memories…"
+          className="min-w-0 flex-1 bg-transparent font-sans text-body-sm text-ink outline-none placeholder:text-faint"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            title="Clear search"
+            className="flex-none text-faint transition-colors duration-150 ease-nothing hover:text-primary [&_svg]:size-3.5"
+          >
+            <X strokeWidth={1.5} />
+          </button>
+        )}
+      </div>
+
+      <div
+        className={`grid grid-cols-[auto_1fr_auto_1fr] border-b border-border transition-opacity duration-150 ${searching ? "pointer-events-none opacity-40" : ""
+          }`}
+        title={searching ? "Filters are ignored while searching" : undefined}
+      >
         <span className={FILTER_NAME}>Status</span>
         <div className="relative border-r border-border">
           <select
@@ -212,13 +245,15 @@ export function MemoryPanel() {
         ) : memories.length === 0 ? (
           <div className="p-6">
             <div className={EMPTY}>
-              {status !== "all" || scope !== "all"
-                ? "[NO MATCHES] — no memory matches this filter."
-                : "[NO MEMORIES] — start chatting to build some."}
+              {searching
+                ? `[NO MATCHES] — nothing matches “${debounced.trim()}”.`
+                : status !== "all" || scope !== "all"
+                  ? "[NO MATCHES] — no memory matches this filter."
+                  : "[NO MEMORIES] — start chatting to build some."}
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col">
             {ordered.map((m) => (
               <MemoryCard key={m.id} mem={m} />
             ))}

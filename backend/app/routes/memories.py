@@ -16,6 +16,13 @@ def list_memories(
     return store.list_memories(conversation_id, status=status, scope=scope)
 
 
+@router.get("/memories/search", response_model=list[MemoryOut])
+def search_memories(conversation_id: str, q: str):
+    # Full-text search across ALL statuses, ranked by BM25. Declared before the
+    # /memories/{mem_id}/... routes so "search" isn't captured as a mem_id.
+    return store.search_memories(conversation_id, q)
+
+
 @router.get("/memories/{mem_id}/revisions", response_model=list[MemoryRevisionOut])
 def memory_revisions(mem_id: str):
     if not store.get_row(mem_id):
@@ -26,6 +33,7 @@ def memory_revisions(mem_id: str):
 class MemoryPatch(BaseModel):
     text: Optional[str] = None
     forget: Optional[bool] = None
+    pinned: Optional[bool] = None
 
 
 @router.patch("/memories/{mem_id}", response_model=MemoryOut)
@@ -33,6 +41,8 @@ def patch_memory(mem_id: str, body: MemoryPatch):
     row = store.get_row(mem_id)
     if not row:
         raise HTTPException(404, "memory not found")
+    if body.pinned is not None:
+        store.set_pinned(mem_id, body.pinned)
     if body.forget:
         store.set_status(mem_id, Status.forgotten)
         store.add_revision(

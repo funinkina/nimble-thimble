@@ -202,6 +202,15 @@ def set_status(mem_id: str, status: Status) -> None:
     )
 
 
+def set_pinned(mem_id: str, pinned: bool) -> None:
+    db.write(
+        lambda c: c.execute(
+            "UPDATE memories SET pinned=?, updated_at=? WHERE id=?",
+            (1 if pinned else 0, now_iso(), mem_id),
+        )
+    )
+
+
 def bump_usage(mem_ids: list[str]) -> None:
     if not mem_ids:
         return
@@ -463,6 +472,24 @@ def list_memories(
     return [row_to_out(r) for r in db.query(sql, tuple(params))]
 
 
+def search_memories(
+    conversation_id: str, query: str, limit: int = 50
+) -> list[MemoryOut]:
+    """Full-text search over the BM25 index, across ALL statuses (active, updated,
+    superseded, forgotten) so the inspector can find any memory regardless of state.
+    Best-match first. Empty when the query has no indexable tokens or nothing hits."""
+    match = _fts_query(query)
+    if not match:
+        return []
+    rows = db.query(
+        "SELECT m.* FROM memories_fts f JOIN memories m ON m.id = f.memory_id "
+        "WHERE memories_fts MATCH ? AND m.conversation_id = ? "
+        "ORDER BY bm25(memories_fts) LIMIT ?",
+        (match, conversation_id, limit),
+    )
+    return [row_to_out(r) for r in rows]
+
+
 def row_to_out(r) -> MemoryOut:
     by = db.query_one("SELECT id FROM memories WHERE supersedes_id=?", (r["id"],))
     return MemoryOut(
@@ -476,12 +503,13 @@ def row_to_out(r) -> MemoryOut:
         confidence=r["confidence"],
         supersedes_id=r["supersedes_id"],
         superseded_by=by["id"] if by else None,
+        pinned=bool(r["pinned"]),
         use_count=r["use_count"],
         last_used_at=r["last_used_at"],
         created_at=r["created_at"],
         updated_at=r["updated_at"],
         decay_score=decay.decay_score(
-            r["last_used_at"], r["created_at"], r["use_count"]
+            r["last_used_at"], r["created_at"], r["use_count"], pinned=bool(r["pinned"])
         ),
         revision_count=revision_count(r["id"]),
     )

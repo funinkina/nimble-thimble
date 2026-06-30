@@ -20,6 +20,7 @@ export interface Memory {
   confidence: number;
   supersedes_id: string | null;
   superseded_by: string | null;
+  pinned: boolean;
   use_count: number;
   last_used_at: string | null;
   created_at: string;

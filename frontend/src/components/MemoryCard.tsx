@@ -5,6 +5,7 @@ import {
   ChevronRight,
   History,
   Pencil,
+  Pin,
   Trash2,
   X,
   EyeOff,
@@ -217,6 +218,18 @@ export function MemoryCard({ mem }: { mem: Memory }) {
     }
   }
 
+  async function togglePin() {
+    const next = !mem.pinned;
+    setAction({ kind: "busy", label: next ? "PINNING" : "UNPINNING" });
+    try {
+      await patchMemory(mem.id, { pinned: next });
+      store.bumpTurn();
+      flash("ok", next ? "PINNED" : "UNPINNED");
+    } catch {
+      flash("err", "ERROR");
+    }
+  }
+
   async function remove() {
     setAction({ kind: "busy", label: "DELETING" });
     try {
@@ -259,6 +272,24 @@ export function MemoryCard({ mem }: { mem: Memory }) {
                 {mem.text}
               </div>
               <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+                <button
+                  onClick={togglePin}
+                  disabled={busy}
+                  title={
+                    mem.pinned
+                      ? "Pinned — protected from decay. Click to unpin."
+                      : "Pin to protect this memory from decay."
+                  }
+                  className={`inline-flex items-center rounded border px-1.5 py-[3px] transition-colors duration-150 ease-nothing disabled:cursor-default [&_svg]:size-3 ${mem.pinned
+                      ? "border-interactive text-interactive"
+                      : "border-line text-faint hover:border-muted hover:text-primary"
+                    }`}
+                >
+                  <Pin
+                    strokeWidth={1.5}
+                    className={mem.pinned ? "fill-current" : ""}
+                  />
+                </button>
                 {touchedEvent && (
                   <span
                     className={`${TAG} ${EVENT_CHIP[touchedEvent]}`}
@@ -356,8 +387,8 @@ export function MemoryCard({ mem }: { mem: Memory }) {
                         </span>
                       </div>
                       {rev.old_text &&
-                      rev.new_text &&
-                      rev.old_text !== rev.new_text ? (
+                        rev.new_text &&
+                        rev.old_text !== rev.new_text ? (
                         // refined / superseded / edited: show the word-level change
                         <TextDiff from={rev.old_text} to={rev.new_text} />
                       ) : rev.new_text ? (
@@ -399,17 +430,24 @@ export function MemoryCard({ mem }: { mem: Memory }) {
           </div>
           <div className="flex flex-col gap-0.5">
             <span className="font-mono text-label uppercase text-faint">Decay</span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-1 w-20 overflow-hidden rounded-full bg-raised">
-                <span
-                  className={`block h-full transition-[width] duration-[250ms] ease-nothing ${decayFill(decay)}`}
-                  style={{ width: `${Math.round(decay * 100)}%` }}
-                />
+            {mem.pinned ? (
+              <span className="inline-flex items-center gap-1 font-mono text-body-sm tracking-[0.04em] text-interactive [&_svg]:size-3">
+                <Pin strokeWidth={1.5} className="fill-current" />
+                PINNED
               </span>
-              <span className="font-mono text-body-sm tracking-[0.04em] text-primary">
-                {decay.toFixed(3)}
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1 w-20 overflow-hidden rounded-full bg-raised">
+                  <span
+                    className={`block h-full transition-[width] duration-[250ms] ease-nothing ${decayFill(decay)}`}
+                    style={{ width: `${Math.round(decay * 100)}%` }}
+                  />
+                </span>
+                <span className="font-mono text-body-sm tracking-[0.04em] text-primary">
+                  {decay.toFixed(3)}
+                </span>
               </span>
-            </span>
+            )}
           </div>
           <div className="flex flex-col gap-0.5">
             <span className="font-mono text-label uppercase text-faint">Used</span>

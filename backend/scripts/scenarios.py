@@ -112,7 +112,19 @@ def main():
         any(t in evt for t in ("superseded", "updated")),
         f"events={list(evt)}",
     )
-    _neg = ("not", "no longer", "anymore", "stopped", "former", "used to")
+    _neg = (
+        "not",
+        "no longer",
+        "anymore",
+        "stopped",
+        "former",
+        "used to",
+        "transitioned",
+        "from being",
+        "switched",
+        "moved on",
+        "instead of",
+    )
     check(
         "no active memory still positively claims 'vegetarian'",
         not any(

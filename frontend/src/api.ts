@@ -62,6 +62,15 @@ export function getMemories(
   return req<Memory[]>(`/memories?${q.toString()}`);
 }
 
+// Full-text search across all statuses, ranked by BM25 (backend FTS index).
+export function searchMemories(
+  conversationId: string,
+  q: string,
+): Promise<Memory[]> {
+  const p = new URLSearchParams({ conversation_id: conversationId, q });
+  return req<Memory[]>(`/memories/search?${p.toString()}`);
+}
+
 export function getMemoryRevisions(id: string): Promise<MemoryRevision[]> {
   return req<MemoryRevision[]>(`/memories/${id}/revisions`);
 }
@@ -87,7 +96,7 @@ export function deleteConversation(id: string): Promise<{ deleted: string }> {
 
 export function patchMemory(
   id: string,
-  body: { text?: string; forget?: boolean },
+  body: { text?: string; forget?: boolean; pinned?: boolean },
 ): Promise<Memory> {
   return req<Memory>(`/memories/${id}`, {
     method: "PATCH",

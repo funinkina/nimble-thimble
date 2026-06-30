@@ -88,6 +88,7 @@ class MemoryOut(BaseModel):
     confidence: float
     supersedes_id: Optional[str]
     superseded_by: Optional[str] = None
+    pinned: bool = False
     use_count: int
     last_used_at: Optional[str]
     created_at: str

@@ -39,7 +39,10 @@ def decay_score(
     created_at: str,
     use_count: int,
     now: datetime | None = None,
+    pinned: bool = False,
 ) -> float:
+    if pinned:
+        return 1.0
     reference = last_used_at or created_at
     score = recency_weight(reference, now) * usage_weight(use_count)
     return max(config.DECAY_FLOOR, round(score, 4))

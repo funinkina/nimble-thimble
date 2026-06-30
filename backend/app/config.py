@@ -28,7 +28,12 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-base-en-v1.5")  # local (fastem
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 
 # --- retrieval / dedup / conflict thresholds (cosine similarity, 0..1) ---
-DEDUP_THRESHOLD = 0.88  # >= this -> duplicate without an LLM call (deterministic)
+# >= this -> duplicate without an LLM call (deterministic). Set at 0.92, not 0.88:
+# a refinement that adds specifics ("has a dog" -> "has a golden retriever named
+# Max") measures ~0.89 cosine — high topic overlap but genuinely new info — and must
+# reach the judge to be folded as an `update`, not auto-dropped as a duplicate. True
+# restatements sit at 0.99-1.0, so they still dedup deterministically below the gate.
+DEDUP_THRESHOLD = 0.90
 CONFLICT_LOW = 0.55  # [CONFLICT_LOW, DEDUP) -> ask llm: update/supersede/unrelated
 FORGET_THRESHOLD = 0.55  # min cosine for an explicit "forget X" to match a memory
 RETRIEVE_THRESHOLD = 0.30  # min cosine to be eligible for retrieval
@@ -62,6 +67,8 @@ HISTORY_TURNS = 8  # recent messages fed to extract() + reply()
 
 # --- LLM resilience (Groq strict json_schema fails ~10% under load) ---
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))  # seconds per call
-LLM_RETRIES = int(os.getenv("LLM_RETRIES", "2"))  # extra attempts on a bad/invalid response
+LLM_RETRIES = int(
+    os.getenv("LLM_RETRIES", "2")
+)  # extra attempts on a bad/invalid response
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
