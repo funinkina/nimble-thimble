@@ -101,6 +101,27 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
 );
 """
 
+# BM25 keyword index over memory text, for hybrid (dense + sparse) retrieval.
+# Manually kept in sync from store.py — memory_id UNINDEXED so it's a stored
+# lookup key, not a search column.
+FTS_SCHEMA = """
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+    memory_id UNINDEXED,
+    text
+);
+"""
+
+
+def _backfill_fts(conn: sqlite3.Connection) -> None:
+    """Seed memories_fts from existing memories if empty (legacy DBs). Idempotent."""
+    if conn.execute("SELECT 1 FROM memories_fts LIMIT 1").fetchone():
+        return
+    for r in conn.execute("SELECT id, text FROM memories").fetchall():
+        conn.execute(
+            "INSERT INTO memories_fts(memory_id, text) VALUES (?,?)",
+            (r["id"], r["text"]),
+        )
+
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Bring a pre-multichat DB up to date. CREATE TABLE IF NOT EXISTS never
@@ -222,8 +243,10 @@ def connect() -> sqlite3.Connection:
     conn.enable_load_extension(False)
     conn.executescript(SCHEMA)
     conn.executescript(VEC_SCHEMA)
+    conn.executescript(FTS_SCHEMA)
     _migrate(conn)
     _backfill_revisions(conn)
+    _backfill_fts(conn)
     conn.commit()
     _conn = conn
     return conn

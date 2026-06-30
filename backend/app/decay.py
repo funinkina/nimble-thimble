@@ -30,7 +30,7 @@ def recency_weight(reference_ts: str | None, now: datetime | None = None) -> flo
 
 def usage_weight(use_count: int) -> float:
     # USAGE_BASE for 0 uses, saturating toward 1.0 as use_count -> infinity
-    climb = 1.0 - 0.5 ** (use_count / config.USAGE_SATURATION)
+    climb = 1.0 - 0.5 ** (max(0, use_count) / config.USAGE_SATURATION)
     return config.USAGE_BASE + (1.0 - config.USAGE_BASE) * climb
 
 

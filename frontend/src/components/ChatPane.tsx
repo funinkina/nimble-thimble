@@ -7,7 +7,7 @@ import {
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { ArrowUp, Bot, Brain, MessageSquare, User } from "lucide-react";
 import { store, useSelectedMessageId } from "../store";
-import type { TurnMeta } from "../types";
+import type { MemoryEventType, TurnMeta } from "../types";
 
 // Color is set on the message Root and inherited; this only shapes the
 // markdown-rendered HTML (paragraphs, lists, code, links) via child variants.
@@ -51,6 +51,47 @@ function Thinking() {
   );
 }
 
+// Per-turn memory changes, surfaced inline so you see what a message DID to
+// memory without opening any pane. Order + tone match the inspector.
+const EVENT_TONE: Record<MemoryEventType, string> = {
+  created: "border-success text-success",
+  updated: "border-warning text-warning",
+  superseded: "border-accent text-accent",
+  duplicate: "border-line text-muted",
+  forgotten: "border-line text-faint",
+};
+const EVENT_ORDER: MemoryEventType[] = [
+  "created",
+  "updated",
+  "superseded",
+  "duplicate",
+  "forgotten",
+];
+
+function EventChips({ meta }: { meta: TurnMeta }) {
+  const counts = new Map<MemoryEventType, number>();
+  const firstId = new Map<MemoryEventType, string>();
+  for (const e of meta.memory_events) {
+    counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
+    if (!firstId.has(e.type)) firstId.set(e.type, e.memory_id);
+  }
+  if (counts.size === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {EVENT_ORDER.filter((t) => counts.has(t)).map((t) => (
+        <button
+          key={t}
+          className={`inline-flex items-center gap-1 rounded border bg-surface px-1.5 py-0.5 font-mono text-label uppercase cursor-pointer transition-opacity duration-150 ease-nothing hover:opacity-70 ${EVENT_TONE[t]}`}
+          title={`Highlight a ${t} memory from this turn`}
+          onClick={() => store.highlightMemory(firstId.get(t)!)}
+        >
+          {counts.get(t)} {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MemoryBadge() {
   const selected = useSelectedMessageId();
   const meta = useMessage(
@@ -65,15 +106,50 @@ function MemoryBadge() {
     ? "border-ink text-ink"
     : `border-line ${n === 0 ? "text-faint" : "text-muted"} hover:border-muted hover:text-primary`;
   return (
-    <button
-      className={`inline-flex flex-none items-center gap-1.5 rounded border bg-surface px-2 py-[3px] font-mono text-label cursor-pointer uppercase transition-colors duration-150 ease-nothing [&_svg]:size-3 ${tone}`}
-      onClick={() => store.selectMessage(meta.message_id)}
-      title="Show this turn's pipeline trace"
-    >
-      <Brain strokeWidth={1.5} />
-      {n} {n === 1 ? "MEMORY" : "MEMORIES"} USED
-    </button>
+    <div className="relative flex-none group">
+      <button
+        className={`inline-flex items-center gap-1.5 rounded border bg-surface px-2 py-[3px] font-mono text-label cursor-pointer uppercase transition-colors duration-150 ease-nothing [&_svg]:size-3 ${tone}`}
+        onClick={() => store.selectMessage(meta.message_id)}
+        title="Show this turn's pipeline trace"
+      >
+        <Brain strokeWidth={1.5} />
+        {n} {n === 1 ? "MEMORY" : "MEMORIES"} USED
+      </button>
+      {n > 0 && (
+        // Provenance popover: the actual memories behind this reply, no pane hop.
+        <div className="absolute right-0 top-full z-10 mt-1 hidden w-[300px] flex-col gap-1 rounded-md border border-line bg-surface p-2 shadow-[0_4px_16px_rgba(0,0,0,0.08)] group-hover:flex">
+          <div className="px-1 pb-1 font-mono text-label uppercase text-faint">
+            Memories behind this reply
+          </div>
+          {meta.retrieved.map((r) => (
+            <button
+              key={r.memory_id}
+              className="flex items-start gap-2 rounded px-1 py-1 text-left transition-colors duration-150 ease-nothing hover:bg-raised"
+              onClick={() => store.highlightMemory(r.memory_id)}
+              title="Highlight in the memory inspector"
+            >
+              <span className="font-mono text-label text-faint">{r.rank}</span>
+              <span className="flex-1 font-sans text-caption leading-[1.35] text-primary [overflow-wrap:anywhere]">
+                {r.text}
+              </span>
+              <span className="font-mono text-label text-muted">
+                {r.score.toFixed(2)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
+}
+
+function TurnEvents() {
+  const meta = useMessage(
+    (m) => m.metadata?.custom as unknown as TurnMeta | undefined,
+  );
+  const running = useMessage((m) => m.status?.type === "running");
+  if (running || !meta) return null;
+  return <EventChips meta={meta} />;
 }
 
 function AssistantMessage() {
@@ -88,6 +164,7 @@ function AssistantMessage() {
       </div>
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
       <Thinking />
+      <TurnEvents />
     </MessagePrimitive.Root>
   );
 }

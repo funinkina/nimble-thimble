@@ -16,7 +16,7 @@ from groq import Groq
 from pydantic import BaseModel
 
 from . import config
-from .models import Extraction, Judgment
+from .models import Extraction, Judgment, Relation
 
 _client: Groq | None = None
 
@@ -36,7 +36,13 @@ _ALLOWED = {
 def client() -> Groq:
     global _client
     if _client is None:
-        _client = Groq(api_key=config.GROQ_API_KEY or None)
+        # max_retries=0: the SDK retries 5xx/timeouts, but json_validate_failed is
+        # a 400 it won't retry — we own that loop in _structured instead.
+        _client = Groq(
+            api_key=config.GROQ_API_KEY or None,
+            timeout=config.LLM_TIMEOUT,
+            max_retries=0,
+        )
     return _client
 
 
@@ -107,28 +113,49 @@ def _structured(
     prompt: str,
     schema_model: Type[BaseModel],
     max_tokens: int,
-) -> tuple[BaseModel, dict]:
+) -> tuple[BaseModel | None, dict]:
+    """Call Groq with strict json_schema. Returns (parsed, meta), or (None, meta)
+    if every attempt fails — Groq's strict mode 400s with json_validate_failed on
+    ~10% of requests, so retry, then degrade gracefully rather than 500 the turn.
+    `meta` carries an `error` field on the final failure so the trace shows it."""
     started = time.perf_counter()
-    completion = client().chat.completions.create(
-        model=model_id,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        max_completion_tokens=max_tokens,
-        reasoning_effort="low",
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_model.__name__.lower(),
-                "strict": True,
-                "schema": _groq_schema(schema_model),
-            },
-        },
-    )
-    text = _strip_fences(completion.choices[0].message.content or "{}")
-    parsed = schema_model.model_validate_json(text)
-    return parsed, _meta(model_id, completion, started)
+    schema = _groq_schema(schema_model)
+    last_err = ""
+    for attempt in range(config.LLM_RETRIES + 1):
+        try:
+            completion = client().chat.completions.create(
+                model=model_id,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                max_completion_tokens=max_tokens,
+                reasoning_effort="low",
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema_model.__name__.lower(),
+                        "strict": True,
+                        "schema": schema,
+                    },
+                },
+            )
+            text = _strip_fences(completion.choices[0].message.content or "{}")
+            parsed = schema_model.model_validate_json(text)
+            meta = _meta(model_id, completion, started)
+            if attempt:
+                meta["retries"] = attempt
+            return parsed, meta
+        except Exception as e:  # noqa: BLE001 - degrade on any LLM/parse failure
+            last_err = f"{type(e).__name__}: {e}"
+    return None, {
+        "model": model_id,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+        "error": last_err,
+        "retries": config.LLM_RETRIES,
+    }
 
 
 EXTRACT_SYSTEM = """You extract durable, long-term memories about the USER from a chat message.
@@ -179,13 +206,15 @@ def extract(user_msg: str, history: list[dict]) -> tuple[Extraction, dict]:
     parsed, meta = _structured(
         config.JUDGE_MODEL, EXTRACT_SYSTEM, prompt, Extraction, 1024
     )
-    return parsed, meta  # type: ignore[return-value]
+    # degrade: extract nothing this turn rather than crash
+    return parsed or Extraction(candidates=[], forget_request=""), meta
 
 
 def judge_conflict(candidate_text: str, neighbour_text: str) -> tuple[Judgment, dict]:
     prompt = f"NEW candidate:\n{candidate_text}\n\nEXISTING memory:\n{neighbour_text}"
     parsed, meta = _structured(config.JUDGE_MODEL, JUDGE_SYSTEM, prompt, Judgment, 512)
-    return parsed, meta  # type: ignore[return-value]
+    # degrade: treat as a fresh, unrelated fact rather than crash
+    return parsed or Judgment(relation=Relation.new, reason="judge unavailable"), meta
 
 
 def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str, dict]:
@@ -198,14 +227,19 @@ def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str
         f"MEMORIES about the user:\n{mem_block}\n\nUser message:\n{user_msg}"
     )
     started = time.perf_counter()
-    completion = client().chat.completions.create(
-        model=config.REPLY_MODEL,
-        messages=[
-            {"role": "system", "content": REPLY_SYSTEM},
-            {"role": "user", "content": prompt},
-        ],
-        max_completion_tokens=1024,
-    )
-    return (completion.choices[0].message.content or ""), _meta(
-        config.REPLY_MODEL, completion, started
-    )
+    try:
+        completion = client().chat.completions.create(
+            model=config.REPLY_MODEL,
+            messages=[
+                {"role": "system", "content": REPLY_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+            max_completion_tokens=1024,
+        )
+        return (completion.choices[0].message.content or ""), _meta(
+            config.REPLY_MODEL, completion, started
+        )
+    except Exception as e:  # noqa: BLE001 - degrade to a graceful message, never 500
+        meta = _meta(config.REPLY_MODEL, None, started)
+        meta["error"] = f"{type(e).__name__}: {e}"
+        return ("Sorry — I had trouble generating a reply just now. Try again?", meta)

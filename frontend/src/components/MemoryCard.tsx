@@ -173,6 +173,29 @@ export function MemoryCard({ mem }: { mem: Memory }) {
           )}
         </div>
 
+        {(mem.supersedes_id || mem.superseded_by) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {mem.supersedes_id && (
+              <button
+                className="inline-flex items-center gap-1 rounded border border-line bg-raised px-2 py-[3px] font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing cursor-pointer hover:border-ink hover:text-ink"
+                onClick={() => store.highlightMemory(mem.supersedes_id!)}
+                title="Jump to the memory this one replaced"
+              >
+                ← replaces {mem.supersedes_id.slice(0, 8)}
+              </button>
+            )}
+            {mem.superseded_by && (
+              <button
+                className="inline-flex items-center gap-1 rounded border border-accent bg-raised px-2 py-[3px] font-mono text-label uppercase text-accent transition-colors duration-150 ease-nothing cursor-pointer hover:opacity-70"
+                onClick={() => store.highlightMemory(mem.superseded_by!)}
+                title="Jump to the memory that replaced this one"
+              >
+                replaced by {mem.superseded_by.slice(0, 8)} →
+              </button>
+            )}
+          </div>
+        )}
+
         {mem.source_excerpt && (
           <div className="flex flex-col gap-[3px]">
             <span className={LABEL}>Evidence</span>

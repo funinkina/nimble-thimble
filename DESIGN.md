@@ -40,15 +40,23 @@ so it lives in plain code.)
    optional `forget_request`. Chit-chat yields an empty list.
 2. **embed** — each candidate is embedded locally (`fastembed`, 384-d, L2-normalized).
 3. **dedup** — find the nearest *active* memory. If similarity ≥ `DEDUP_THRESHOLD`
-   and the LLM judges `duplicate`, drop the candidate and reinforce the existing
-   one (bump its use count). No duplicate rows.
-4. **conflict / supersede** — if the nearest active memory is within
-   `[CONFLICT_LOW, DEDUP_THRESHOLD)`, ask `llm.judge_conflict`. The returned
-   `relation` drives a deterministic status transition (below).
+   the candidate is a duplicate **deterministically** — dropped and the existing
+   memory reinforced, with **no LLM call** (a near-identical embedding is not an
+   ambiguous case, so spending a judge call on it would be waste; the dedup trace
+   marks it `llm: null`). No duplicate rows.
+4. **conflict / supersede** — only the genuinely ambiguous band
+   `[CONFLICT_LOW, DEDUP_THRESHOLD)` reaches `llm.judge_conflict`. The returned
+   `relation` (duplicate / update / supersede / unrelated) drives a deterministic
+   status transition (below). This is the latent/deterministic split made literal:
+   the model is consulted only where similarity alone can't decide.
 5. **retrieve** — embed the user message, pull candidates from the vec index,
    keep active ones above `RETRIEVE_THRESHOLD`, rank by **cosine × decay**, take
    the top *k*, and reinforce them. Each retrieved row records cosine, decay,
-   final score, and rank.
+   final score, rank, and its status. An optional hybrid path (BM25 fused with
+   RRF, then a local cross-encoder rerank — both behind `USE_BM25`/`USE_RERANK`)
+   adds per-row `vec_rank`/`bm25_rank`/`rrf_score`/`rerank_score` to the trace;
+   see [README → Retrieval quality](README.md#retrieval-quality-measured) for why
+   it's off by default.
 6. **reply** — `llm.reply` answers using the retrieved memories as context; the
    trace records which memory ids were in scope and the token/latency cost.
 
@@ -67,11 +75,12 @@ destroyed — the full history stays inspectable.
                               │
         ┌─────────────────────┼───────────────────────────┐
    cos < CONFLICT_LOW   CONFLICT_LOW ≤ cos < DEDUP    cos ≥ DEDUP
-   (or no neighbour)    → judge_conflict()            → judge_conflict()
-        │                     │                            │
-     CREATE              relation:                    duplicate → DROP candidate
-     active            ├ update  → fold IN PLACE:        REINFORCE existing
-     + 'created' rev   │           text re-embedded,     (bump usage, nudge
+   (or no neighbour)    → judge_conflict()            → DETERMINISTIC duplicate
+        │                     │                          (no LLM call)
+     CREATE              relation:                          │
+     active            ├ duplicate → DROP + REINFORCE   DROP candidate +
+     + 'created' rev   ├ update  → fold IN PLACE:        REINFORCE existing
+                       │           text re-embedded,     (bump usage, nudge
                        │           confidence nudged↑,    confidence, append
                        │           +'refined' rev          'reinforced' rev)
                        ├ supersede→ fold IN PLACE:
@@ -80,7 +89,8 @@ destroyed — the full history stays inspectable.
                        │           +'superseded' rev
                        └ unrelated→ CREATE active (false match) +'created' rev
 
-   explicit "forget X" → matched active memory ⇒ FORGOTTEN +'forgotten' rev
+   explicit "forget X" → nearest active memory with cos ≥ FORGET_THRESHOLD
+                         ⇒ FORGOTTEN +'forgotten' rev   (else: forgets nothing)
 ```
 
 The canonical row stays `active` across refinements; its **decay strength carries
@@ -168,10 +178,24 @@ needs no decoration.
 - **Local embeddings (bge-small)** trade some retrieval recall versus a hosted
   model for zero extra keys and offline operation. The retrieval threshold is
   tuned for this model and lives in `config.py`.
-- **Two judge calls per candidate at most** keeps cost and latency bounded and
-  every judgment on record. The deterministic gates (`DEDUP_THRESHOLD`,
-  `CONFLICT_LOW`) ensure the LLM is only consulted when similarity is genuinely
-  ambiguous — clear-cut new facts and clear-cut duplicates are handled in code.
+- **One judge call per candidate at most** keeps cost and latency bounded and
+  every judgment on record. The deterministic gates ensure the LLM is consulted
+  *only* in the ambiguous band: `cos < CONFLICT_LOW` creates in code, `cos ≥
+  DEDUP_THRESHOLD` dedups in code, and only `[CONFLICT_LOW, DEDUP_THRESHOLD)`
+  spends a `judge_conflict` call. (Forget matching uses its own
+  `FORGET_THRESHOLD`, set at `CONFLICT_LOW` rather than the much looser retrieval
+  floor, so "forget my diet" can't sweep away a marginally-related memory.)
+
+- **The pipeline degrades, it doesn't crash.** Groq's strict `json_schema` mode
+  returns `json_validate_failed` on a non-trivial fraction of requests under load;
+  a raw `model_validate_json` on that would 500 the whole turn with no trace.
+  `llm._structured` gives every judgment call a timeout (`LLM_TIMEOUT`) and a
+  bounded retry (`LLM_RETRIES`), then falls back to a safe empty result —
+  `extract` → no candidates, `judge_conflict` → treat as a fresh fact, `reply` →
+  a graceful apology — and records the failure in that stage's trace `llm.error`.
+  A flaky model degrades memory quality for one turn instead of breaking the
+  request. These are mechanics (retry/timeout/fallback), so they live in code,
+  not in a prompt.
 - **`openai/gpt-oss-20b` for judgment, `openai/gpt-oss-120b` for replies**:
   per-turn extraction and conflict judgment run on the cheap, fast model with
   `reasoning_effort: low` and a schema-constrained response; replies get the

@@ -162,12 +162,33 @@ function Conflict({ p }: { p: ConflictPayload }) {
   );
 }
 
+// status -> a small colored dot, so retrieval shows WHAT it pulled, not just how well
+function statusDot(status: string): string {
+  switch (status) {
+    case "active":
+      return "bg-success";
+    case "updated":
+      return "bg-warning";
+    case "superseded":
+      return "bg-accent";
+    default:
+      return "bg-faint";
+  }
+}
+
 function Retrieve({ p }: { p: RetrievePayload }) {
-  const cell = "grid grid-cols-[22px_1fr_56px_52px_52px] gap-2 items-center px-2 py-1.5";
+  const cell =
+    "grid grid-cols-[22px_1fr_56px_52px_52px] gap-2 items-center px-2 py-1.5";
+  const rankedBy = p.reranked
+    ? "rerank × decay"
+    : p.hybrid
+      ? "RRF × decay"
+      : "cosine × decay";
   return (
     <>
       <div className={Q}>
-        threshold {p.threshold} &middot; ranked by cosine &times; decay
+        threshold {p.threshold} &middot; ranked by {rankedBy}
+        {p.hybrid ? " · hybrid (vec+bm25)" : ""}
       </div>
       {p.retrieved.length === 0 ? (
         <div className={EMPTY_NOTE}>NOTHING ABOVE THRESHOLD</div>
@@ -181,10 +202,19 @@ function Retrieve({ p }: { p: RetrievePayload }) {
             <span className="text-right">SCORE</span>
           </div>
           {p.retrieved.map((row) => (
-            <div className={`${cell} border-b border-border last:border-b-0`} key={row.memory_id}>
+            <button
+              className={`${cell} border-b border-border last:border-b-0 text-left transition-colors duration-150 ease-nothing cursor-pointer hover:bg-raised`}
+              key={row.memory_id}
+              title={`Highlight ${shortId(row.memory_id)} in the memory inspector`}
+              onClick={() => store.highlightMemory(row.memory_id)}
+            >
               <span className="font-mono text-label text-faint">{row.rank}</span>
-              <span className="font-sans text-caption leading-[1.35] text-primary [overflow-wrap:anywhere]">
-                {row.text}
+              <span className="flex items-start gap-1.5 font-sans text-caption leading-[1.35] text-primary [overflow-wrap:anywhere]">
+                <span
+                  className={`mt-[5px] size-1.5 flex-none rounded-full ${statusDot(row.status)}`}
+                  title={row.status}
+                />
+                <span>{row.text}</span>
               </span>
               <span className="text-right font-mono text-caption text-primary">
                 {row.cosine.toFixed(3)}
@@ -195,7 +225,7 @@ function Retrieve({ p }: { p: RetrievePayload }) {
               <span className="text-right font-mono text-caption font-bold text-ink">
                 {row.score.toFixed(3)}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}

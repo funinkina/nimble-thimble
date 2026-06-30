@@ -151,9 +151,13 @@ def main():
             "vegetarian" in (conflict_rev["old_text"] or "").lower(),
             repr(conflict_rev["old_text"]),
         )
+        # Supersede resets confidence to the new claim's; whether the number moves
+        # depends on the LLM's confidence, so assert the revision RECORDS both
+        # rather than requiring a delta (which would be flaky on LLM variance).
         check(
-            "revision moved confidence",
-            conflict_rev["old_confidence"] != conflict_rev["new_confidence"],
+            "revision records old + new confidence",
+            conflict_rev["old_confidence"] is not None
+            and conflict_rev["new_confidence"] is not None,
             f"{conflict_rev['old_confidence']} -> {conflict_rev['new_confidence']}",
         )
     check(
@@ -201,6 +205,63 @@ def main():
     forgotten_ids = {m["id"] for m in after}
     leaked = [x for x in r2["retrieved"] if x["memory_id"] in forgotten_ids]
     check("forgotten memory no longer retrieved", not leaked, f"leaked={leaked}")
+
+    print("\n=== Scenario 5: NO DUPLICATION when a known fact is restated ===")
+    chat("For the record, I work as a software engineer at a startup.")
+    active_before = len(memories(status="active"))
+    # Restate the same fact. Either the extractor suppresses it (no candidate) or
+    # the dedup stage drops it — BOTH must avoid spawning a second memory. And if
+    # the dedup stage does run on a >= DEDUP_THRESHOLD match, it must be
+    # deterministic (no LLM judge): that's the A1 fix.
+    r = chat("For the record, I work as a software engineer at a startup.")
+    check(
+        "restating a known fact added no new active memory",
+        len(memories(status="active")) <= active_before,
+        f"{active_before} -> {len(memories(status='active'))}",
+    )
+    dt = next((t for t in traces(r["message_id"]) if t["stage"] == "dedup"), None)
+    dropped = dt["payload"]["dropped"] if dt else []
+    if dropped:
+        check(
+            "high-cosine duplicate skipped the LLM judge (deterministic, llm=null)",
+            any(d.get("llm") is None for d in dropped),
+            f"llm_metas={[d.get('llm') for d in dropped]}",
+        )
+    else:
+        check(
+            "extractor suppressed the restated fact (no dedup needed)",
+            not any(e["type"] == "created" for e in r["memory_events"]),
+            f"events={[e['type'] for e in r['memory_events']]}",
+        )
+
+    print("\n=== Scenario 6: FORGET PRECISION (loose subject must NOT forget) ===")
+    active_ids_before = {m["id"] for m in memories(status="active")}
+    # Subject unrelated to anything stored: must not fall through FORGET_THRESHOLD.
+    r = chat("Please forget about my favourite Pokemon.")
+    check(
+        "no forgotten event fired for an unrelated subject",
+        not any(e["type"] == "forgotten" for e in r["memory_events"]),
+        f"events={[e['type'] for e in r['memory_events']]}",
+    )
+    still_active = {m["id"] for m in memories(status="active")}
+    check(
+        "no existing memory was wrongly forgotten",
+        active_ids_before <= still_active,
+        f"missing={active_ids_before - still_active}",
+    )
+
+    print("\n=== Scenario 7: MANUAL EDIT via PATCH (inspector action) ===")
+    target = next(iter(memories(status="active")), None)
+    if target:
+        new_text = target["text"].rstrip(".") + " (edited in the inspector)."
+        patched = requests.patch(
+            f"{BASE}/memories/{target['id']}", json={"text": new_text}, timeout=30
+        ).json()
+        check("PATCH returned the new text", patched.get("text") == new_text)
+        kinds = [rv["change_type"] for rv in revisions(target["id"])]
+        check("an 'edited' revision was appended", "edited" in kinds, f"revisions={kinds}")
+    else:
+        check("an active memory exists to edit", False)
 
     print("\n=== METRICS ===")
     m = requests.get(

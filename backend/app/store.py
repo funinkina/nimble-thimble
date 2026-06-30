@@ -81,6 +81,11 @@ def delete_conversation(cid: str) -> None:
             "(SELECT id FROM memories WHERE conversation_id=?)",
             (cid,),
         )
+        c.execute(
+            "DELETE FROM memories_fts WHERE memory_id IN "
+            "(SELECT id FROM memories WHERE conversation_id=?)",
+            (cid,),
+        )
         c.execute("DELETE FROM memories WHERE conversation_id=?", (cid,))
         c.execute("DELETE FROM traces WHERE conversation_id=?", (cid,))
         c.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
@@ -173,6 +178,9 @@ def add_memory(
             "INSERT INTO vec_memories(memory_id, embedding) VALUES (?, ?)",
             (mem_id, blob),
         )
+        c.execute(
+            "INSERT INTO memories_fts(memory_id, text) VALUES (?, ?)", (mem_id, text)
+        )
 
     db.write(_do)
     return mem_id
@@ -215,6 +223,10 @@ def update_text(mem_id: str, text: str, embedding: list[float]) -> None:
             "INSERT INTO vec_memories(memory_id, embedding) VALUES (?,?)",
             (mem_id, blob),
         )
+        c.execute("DELETE FROM memories_fts WHERE memory_id=?", (mem_id,))
+        c.execute(
+            "INSERT INTO memories_fts(memory_id, text) VALUES (?,?)", (mem_id, text)
+        )
 
     db.write(_do)
 
@@ -250,6 +262,10 @@ def revise_memory(
         c.execute(
             "INSERT INTO vec_memories(memory_id, embedding) VALUES (?,?)",
             (mem_id, blob),
+        )
+        c.execute("DELETE FROM memories_fts WHERE memory_id=?", (mem_id,))
+        c.execute(
+            "INSERT INTO memories_fts(memory_id, text) VALUES (?,?)", (mem_id, text)
         )
 
     db.write(_do)
@@ -357,6 +373,7 @@ def delete_memory(mem_id: str) -> None:
     def _do(c):
         c.execute("DELETE FROM memories WHERE id=?", (mem_id,))
         c.execute("DELETE FROM vec_memories WHERE memory_id=?", (mem_id,))
+        c.execute("DELETE FROM memories_fts WHERE memory_id=?", (mem_id,))
         c.execute("DELETE FROM memory_revisions WHERE memory_id=?", (mem_id,))
 
     db.write(_do)
@@ -389,6 +406,36 @@ def knn(
             if len(out) >= k:
                 break
     return out
+
+
+def _fts_query(text: str) -> str | None:
+    """Build a safe FTS5 MATCH expression from arbitrary user text: take word
+    tokens, quote each (so FTS operators in the input can't break the query),
+    OR them together. Returns None when there's nothing to search."""
+    import re
+
+    toks = re.findall(r"\w+", text.lower())
+    if not toks:
+        return None
+    return " OR ".join(f'"{t}"' for t in toks)
+
+
+def bm25(query: str, k: int, conversation_id: str) -> list[tuple[str, float]]:
+    """Top-k ACTIVE memories by BM25 keyword relevance, scoped to one conversation.
+    Returns [(memory_id, bm25_score)] best-first. Empty when the query has no
+    indexable tokens or nothing matches."""
+    match = _fts_query(query)
+    if not match:
+        return []
+    rows = db.query(
+        "SELECT f.memory_id AS memory_id, bm25(memories_fts) AS score "
+        "FROM memories_fts f JOIN memories m ON m.id = f.memory_id "
+        "WHERE memories_fts MATCH ? AND m.conversation_id = ? AND m.status = ? "
+        "ORDER BY score LIMIT ?",
+        (match, conversation_id, Status.active.value, k),
+    )
+    # bm25() returns a negative number; smaller = better. Negate for "higher=better".
+    return [(r["memory_id"], -r["score"]) for r in rows]
 
 
 def list_memories(

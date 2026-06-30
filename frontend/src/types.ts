@@ -131,15 +131,23 @@ export interface RetrieveRow {
   memory_id: string;
   text: string;
   scope: Scope;
+  status: MemoryStatus;
   cosine: number;
   decay: number;
   score: number;
   rank: number;
+  // hybrid sub-scores (present when BM25/rerank are enabled; null/absent otherwise)
+  vec_rank?: number | null;
+  bm25_rank?: number | null;
+  rrf_score?: number | null;
+  rerank_score?: number | null;
 }
 
 export interface RetrievePayload {
   retrieved: RetrieveRow[];
   threshold: number;
+  hybrid?: boolean;
+  reranked?: boolean;
 }
 
 export interface ReplyPayload {
