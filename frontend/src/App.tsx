@@ -38,6 +38,9 @@ function ChatRuntime({ initialMessages }: { initialMessages: ThreadMessageLike[]
   );
 }
 
+const PANE_PLACEHOLDER = "flex flex-col min-h-0 min-w-0 border-r border-line bg-page";
+const PLACEHOLDER_TEXT = "m-4 font-mono text-body-sm tracking-[0.06em] text-faint";
+
 function ChatColumn({ conversationId }: { conversationId: string }) {
   const [initial, setInitial] = useState<ThreadMessageLike[] | null>(null);
 
@@ -54,13 +57,18 @@ function ChatColumn({ conversationId }: { conversationId: string }) {
 
   if (initial === null) {
     return (
-      <section className="pane">
-        <div className="trace-empty">[LOADING CHAT...]</div>
+      <section className={PANE_PLACEHOLDER}>
+        <div className={PLACEHOLDER_TEXT}>[LOADING CHAT...]</div>
       </section>
     );
   }
   return <ChatRuntime key={conversationId} initialMessages={initial} />;
 }
+
+const COLS_EXPANDED =
+  "grid-cols-[minmax(200px,0.6fr)_minmax(360px,1.1fr)_minmax(420px,1.4fr)_minmax(380px,1fr)]";
+const COLS_COLLAPSED =
+  "grid-cols-[52px_minmax(360px,1.1fr)_minmax(420px,1.4fr)_minmax(380px,1fr)]";
 
 export default function App() {
   const conversationId = useSelectedConversationId();
@@ -73,7 +81,9 @@ export default function App() {
   }, [collapsed]);
 
   return (
-    <div className={`app${collapsed ? " sidebar-collapsed" : ""}`}>
+    <div
+      className={`grid h-screen w-screen overflow-hidden ${collapsed ? COLS_COLLAPSED : COLS_EXPANDED}`}
+    >
       <ConversationSidebar
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed((c) => !c)}
@@ -81,8 +91,8 @@ export default function App() {
       {conversationId ? (
         <ChatColumn key={conversationId} conversationId={conversationId} />
       ) : (
-        <section className="pane">
-          <div className="trace-empty">[LOADING...]</div>
+        <section className={PANE_PLACEHOLDER}>
+          <div className={PLACEHOLDER_TEXT}>[LOADING...]</div>
         </section>
       )}
       <MemoryPanel />

@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Nothing design system — LIGHT MODE tokens.
+   Defined here once; consumed as inline utilities everywhere
+   (bg-surface, text-muted, font-mono, text-label, animate-fade…).
+   ============================================================ */
+@theme {
+  /* fonts */
+  --font-display: "Doto", "Space Mono", monospace;
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+
+  /* surfaces */
+  --color-page: #f5f5f5;
+  --color-surface: #ffffff;
+  --color-raised: #f0f0f0;
+  --color-border: #e8e8e8;
+  --color-line: #cccccc;
+
+  /* text — display / primary / secondary / disabled */
+  --color-ink: #000000;
+  --color-primary: #1a1a1a;
+  --color-muted: #666666;
+  --color-faint: #999999;
+
+  /* semantic — color is an event, applied to the value not the fill */
+  --color-accent: #d71921;
+  --color-success: #4a9e5c;
+  --color-warning: #d4a843;
+  --color-interactive: #007aff;
+
+  /* type scale — size / line-height / tracking baked per step */
+  --text-hero: 64px;
+  --text-hero--line-height: 0.92;
+  --text-display: 48px;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.02em;
+  --text-title: 36px;
+  --text-title--line-height: 1.1;
+  --text-title--letter-spacing: -0.02em;
+  --text-heading: 24px;
+  --text-heading--line-height: 1.2;
+  --text-heading--letter-spacing: -0.01em;
+  --text-subheading: 18px;
+  --text-subheading--line-height: 1.3;
+  --text-body: 16px;
+  --text-body--line-height: 1.5;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 1.5;
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.04em;
+  --text-label: 11px;
+  --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.08em;
+
+  /* motion — subtle ease-out, no spring */
+  --ease-nothing: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --animate-fade: fade 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --animate-pulse-soft: pulse-soft 1.4s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  /* off-white technical-manual page + subtle on-brand dot grid */
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-primary);
+    background-color: var(--color-page);
+    background-image: radial-gradient(
+      circle,
+      var(--color-line) 1px,
+      transparent 1px
+    );
+    background-size: 16px 16px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-ink);
+    color: var(--color-surface);
+  }
+}
+
+/* thin, on-brand scrollbar — applied inline via `scroll-slim` */
+@utility scroll-slim {
+  scrollbar-width: thin;
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border-radius: 999px;
+  }
+}

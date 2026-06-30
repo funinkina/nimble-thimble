@@ -16,6 +16,11 @@ async function refresh() {
   store.setConversations(await listConversations());
 }
 
+const ICON_BTN =
+  "inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border bg-surface transition-colors duration-150 ease-nothing [&_svg]:size-[15px]";
+const ICON_BTN_IDLE = "border-line text-muted hover:border-ink hover:text-ink";
+const ICON_BTN_ACTIVE = "bg-ink border-ink text-surface";
+
 export function ConversationSidebar({
   collapsed,
   onToggleCollapse,
@@ -70,28 +75,32 @@ export function ConversationSidebar({
 
   if (collapsed) {
     return (
-      <section className="pane conv-sidebar collapsed">
-        <header className="pane-head">
+      <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
+        <header className="flex-none flex items-center justify-center py-4 border-b border-border">
           <button
-            className="conv-icon-btn"
+            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
             onClick={onToggleCollapse}
             title="Expand chats"
           >
             <PanelLeftOpen strokeWidth={1.5} />
           </button>
         </header>
-        <div className="pane-body conv-rail">
+        <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col items-center gap-2 py-2">
           {conversations.map((c, i) => (
             <button
               key={c.id}
-              className={`conv-icon-btn conv-rail-item${selected === c.id ? " active" : ""}`}
+              className={`${ICON_BTN} ${selected === c.id ? ICON_BTN_ACTIVE : ICON_BTN_IDLE} font-mono text-body-sm`}
               onClick={() => store.selectConversation(c.id)}
               title={c.title || "New chat"}
             >
               {i + 1}
             </button>
           ))}
-          <button className="conv-icon-btn" onClick={newChat} title="New chat">
+          <button
+            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
+            onClick={newChat}
+            title="New chat"
+          >
             <Plus strokeWidth={1.5} />
           </button>
         </div>
@@ -100,15 +109,21 @@ export function ConversationSidebar({
   }
 
   return (
-    <section className="pane conv-sidebar">
-      <header className="pane-head">
-        <span className="pane-title">Chats</span>
-        <span className="conv-head-actions">
-          <button className="conv-icon-btn" onClick={newChat} title="New chat">
+    <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
+      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border">
+        <span className="font-sans font-bold text-subheading text-ink tracking-[-0.01em]">
+          Chats
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <button
+            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
+            onClick={newChat}
+            title="New chat"
+          >
             <Plus strokeWidth={1.5} />
           </button>
           <button
-            className="conv-icon-btn"
+            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
             onClick={onToggleCollapse}
             title="Collapse chats"
           >
@@ -116,19 +131,27 @@ export function ConversationSidebar({
           </button>
         </span>
       </header>
-      <div className="pane-body conv-list">
+      <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col p-2 gap-1">
         {conversations.length === 0 ? (
-          <div className="trace-empty">[NO CHATS]</div>
+          <div className="font-mono text-body-sm tracking-[0.06em] text-faint">
+            [NO CHATS]
+          </div>
         ) : (
           conversations.map((c) => (
             <div
               key={c.id}
-              className={`conv-item${selected === c.id ? " active" : ""}`}
+              className={`group flex items-center gap-2 rounded-lg border px-4 py-2 cursor-pointer transition-colors duration-150 ease-nothing ${
+                selected === c.id
+                  ? "bg-surface border-line"
+                  : "border-transparent hover:bg-raised"
+              }`}
               onClick={() => store.selectConversation(c.id)}
             >
-              <span className="conv-title">{c.title || "New chat"}</span>
+              <span className="flex-1 min-w-0 truncate font-sans text-body-sm text-primary">
+                {c.title || "New chat"}
+              </span>
               <button
-                className="conv-del"
+                className="flex-none inline-flex items-center text-faint opacity-0 transition-opacity duration-150 ease-nothing group-hover:opacity-100 hover:text-accent [&_svg]:size-[14px]"
                 title="Delete chat"
                 onClick={(e) => {
                   e.stopPropagation();
