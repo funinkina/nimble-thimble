@@ -64,6 +64,9 @@ DECAY_FLOOR = 0.2  # decay_score never drops below this
 
 # --- chat context ---
 HISTORY_TURNS = 8  # recent messages fed to extract() + reply()
+# Reply cap. 1024 truncated longer answers mid-sentence ("response cuts off"); 2048
+# clears typical replies. finish_reason=="length" still lands in the trace when hit.
+REPLY_MAX_TOKENS = int(os.getenv("REPLY_MAX_TOKENS", "2048"))
 
 # --- LLM resilience (Groq strict json_schema fails ~10% under load) ---
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))  # seconds per call

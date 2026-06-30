@@ -250,11 +250,13 @@ def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str
         completion = client().chat.completions.create(
             model=config.REPLY_MODEL,
             messages=_reply_messages(prompt),
-            max_completion_tokens=1024,
+            max_completion_tokens=config.REPLY_MAX_TOKENS,
         )
-        return (completion.choices[0].message.content or ""), _meta(
-            config.REPLY_MODEL, completion, started
-        )
+        meta = _meta(config.REPLY_MODEL, completion, started)
+        finish = getattr(completion.choices[0], "finish_reason", None)
+        if finish and finish != "stop":
+            meta["finish_reason"] = finish
+        return (completion.choices[0].message.content or ""), meta
     except Exception as e:  # noqa: BLE001 - degrade to a graceful message, never 500
         meta = _meta(config.REPLY_MODEL, None, started)
         meta["error"] = f"{type(e).__name__}: {e}"
@@ -272,33 +274,42 @@ def reply_stream(
     started = time.perf_counter()
     parts: list[str] = []
     usage = None
+    finish = None
     try:
-        # Groq's streamed chunks already carry usage on the final chunk (chunk.usage);
-        # stream_options isn't accepted by this SDK version, so don't pass it.
         stream = client().chat.completions.create(
             model=config.REPLY_MODEL,
             messages=_reply_messages(prompt),
-            max_completion_tokens=1024,
+            max_completion_tokens=config.REPLY_MAX_TOKENS,
             stream=True,
         )
         for chunk in stream:
-            if getattr(chunk, "usage", None):
-                usage = chunk.usage
+            xg = getattr(chunk, "x_groq", None)
+            usage = getattr(chunk, "usage", None) or getattr(xg, "usage", None) or usage
             choices = getattr(chunk, "choices", None)
             if not choices:
                 continue
-            delta = getattr(choices[0].delta, "content", None)
+            ch = choices[0]
+            delta = getattr(ch.delta, "content", None)
             if delta:
                 parts.append(delta)
                 yield ("delta", delta)
+            if getattr(ch, "finish_reason", None):
+                finish = ch.finish_reason
         meta = {
             "model": config.REPLY_MODEL,
             "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
             "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
             "latency_ms": round((time.perf_counter() - started) * 1000, 1),
         }
+        # finish_reason=="length" means we hit REPLY_MAX_TOKENS mid-reply — surface
+        # it in the trace instead of letting the text silently cut off.
+        if finish and finish != "stop":
+            meta["finish_reason"] = finish
         yield ("done", ("".join(parts), meta))
-    except Exception as e:  # noqa: BLE001 - degrade to a graceful message, never 500
+    except Exception as e:  # noqa: BLE001 - degrade gracefully, never 500
+        # Keep whatever already streamed so a mid-stream drop doesn't blank the
+        # bubble; only fall back to the canned line if nothing arrived at all.
+        partial = "".join(parts)
         meta = {
             "model": config.REPLY_MODEL,
             "input_tokens": 0,
@@ -306,4 +317,4 @@ def reply_stream(
             "latency_ms": round((time.perf_counter() - started) * 1000, 1),
             "error": f"{type(e).__name__}: {e}",
         }
-        yield ("done", (REPLY_FALLBACK, meta))
+        yield ("done", (partial or REPLY_FALLBACK, meta))
