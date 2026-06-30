@@ -116,13 +116,26 @@ export function MetricsBar() {
 
   return (
     <div className="flex-[0_1_auto] max-h-[48vh] overflow-y-auto scroll-slim flex flex-col gap-6 border-b border-border bg-surface p-6">
-      <div className="flex flex-col gap-1">
-        <span className="font-display text-hero font-bold text-ink">
-          {m ? active : "--"}
-        </span>
-        <span className="font-mono text-label uppercase tracking-[0.1em] text-muted">
-          ACTIVE MEMORIES
-        </span>
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-6">
+        <div className="flex flex-none flex-col gap-1">
+          <span className="font-display text-hero font-bold text-ink">
+            {m ? active : "--"}
+          </span>
+          <span className="font-mono text-label uppercase tracking-[0.1em] text-muted">
+            ACTIVE MEMORIES
+          </span>
+        </div>
+        {m && (
+          <div className="flex flex-1 min-w-[200px] flex-col gap-4">
+            <Dist
+              title="BY STATUS"
+              data={m.memories_by_status}
+              order={STATUS_ORDER}
+              colorByKey
+            />
+            <Dist title="BY SCOPE" data={m.memories_by_scope} order={SCOPE_ORDER} />
+          </div>
+        )}
       </div>
 
       {error ? (
@@ -134,43 +147,33 @@ export function MetricsBar() {
           [LOADING...]
         </div>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-            <Metric label="MESSAGES" value={m.total_user_messages} />
-            <Metric label="CANDIDATES" value={m.total_candidates} />
-            <Metric
-              label="UPDATES"
-              value={m.update_count}
-              tone={m.update_count ? "warning" : undefined}
-            />
-            <Metric
-              label="SUPERSEDES"
-              value={m.supersede_count}
-              tone={m.supersede_count ? "accent" : undefined}
-            />
-            <Metric label="DEDUPED" value={m.dedup_count} />
-            <Metric
-              label="FORGOTTEN"
-              value={m.forgotten_count}
-              tone={m.forgotten_count ? "accent" : undefined}
-            />
-            <Metric label="LLM CALLS" value={m.llm_calls} />
-            <Metric label="AVG COSINE" value={m.avg_retrieval_cosine.toFixed(3)} />
-            <Metric
-              label="TOK IN/OUT"
-              value={`${m.llm_input_tokens}/${m.llm_output_tokens}`}
-            />
-            <Metric label="AVG LAT" value={`${m.avg_llm_latency_ms}MS`} />
-          </div>
-
-          <Dist
-            title="BY STATUS"
-            data={m.memories_by_status}
-            order={STATUS_ORDER}
-            colorByKey
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+          <Metric label="MESSAGES" value={m.total_user_messages} />
+          <Metric label="CANDIDATES" value={m.total_candidates} />
+          <Metric
+            label="UPDATES"
+            value={m.update_count}
+            tone={m.update_count ? "warning" : undefined}
           />
-          <Dist title="BY SCOPE" data={m.memories_by_scope} order={SCOPE_ORDER} />
-        </>
+          <Metric
+            label="SUPERSEDES"
+            value={m.supersede_count}
+            tone={m.supersede_count ? "accent" : undefined}
+          />
+          <Metric label="DEDUPED" value={m.dedup_count} />
+          <Metric
+            label="FORGOTTEN"
+            value={m.forgotten_count}
+            tone={m.forgotten_count ? "accent" : undefined}
+          />
+          <Metric label="LLM CALLS" value={m.llm_calls} />
+          <Metric label="AVG COSINE" value={m.avg_retrieval_cosine.toFixed(3)} />
+          <Metric
+            label="TOK IN/OUT"
+            value={`${m.llm_input_tokens}/${m.llm_output_tokens}`}
+          />
+          <Metric label="AVG LAT" value={`${m.avg_llm_latency_ms}MS`} />
+        </div>
       )}
     </div>
   );

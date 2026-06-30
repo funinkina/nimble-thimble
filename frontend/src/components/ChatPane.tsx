@@ -5,7 +5,7 @@ import {
   useMessage,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, Brain } from "lucide-react";
+import { ArrowUp, Bot, Brain, MessageSquare, User } from "lucide-react";
 import { store, useSelectedMessageId } from "../store";
 import type { TurnMeta } from "../types";
 
@@ -19,7 +19,8 @@ const MARKDOWN =
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0 " +
   "[&_a]:text-interactive [&_a]:no-underline [&_a:hover]:underline";
 
-const ROLE_LABEL = "font-mono text-label uppercase";
+const ROLE_LABEL =
+  "inline-flex items-center gap-1.5 font-mono text-label uppercase [&_svg]:size-3";
 
 function MarkdownText() {
   return <MarkdownTextPrimitive className={MARKDOWN} />;
@@ -28,7 +29,10 @@ function MarkdownText() {
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="flex flex-col gap-2 border-b border-border bg-page px-6 py-4 animate-fade text-ink">
-      <div className={`${ROLE_LABEL} text-muted`}>YOU</div>
+      <div className={`${ROLE_LABEL} text-muted`}>
+        <User strokeWidth={1.5} />
+        YOU
+      </div>
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
     </MessagePrimitive.Root>
   );
