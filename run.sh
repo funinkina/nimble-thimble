@@ -18,13 +18,13 @@ FRONTEND_PORT=5173
 # deps mirror backend/pyproject.toml [project].dependencies (used only on the
 # pip fallback; the uv path reads pyproject/uv.lock directly).
 PY_DEPS=(
-  "fastapi>=0.115"
-  "uvicorn[standard]>=0.34"
-  "groq>=0.13"
-  "fastembed>=0.4"
-  "sqlite-vec>=0.1.6"
-  "numpy>=1.26"
-  "python-dotenv>=1.0"
+  "fastapi>=0.138"
+  "uvicorn[standard]>=0.49"
+  "groq>=1.5"
+  "fastembed>=0.8"
+  "sqlite-vec>=0.1.9"
+  "numpy>=2.1"
+  "python-dotenv>=1.2"
 )
 
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }

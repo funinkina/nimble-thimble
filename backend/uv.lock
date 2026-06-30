@@ -360,13 +360,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "fastembed", specifier = ">=0.4" },
-    { name = "groq", specifier = ">=0.13" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "sqlite-vec", specifier = ">=0.1.6" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
+    { name = "fastapi", specifier = ">=0.138" },
+    { name = "fastembed", specifier = ">=0.8" },
+    { name = "groq", specifier = ">=1.5" },
+    { name = "numpy", specifier = ">=2.1" },
+    { name = "python-dotenv", specifier = ">=1.2" },
+    { name = "sqlite-vec", specifier = ">=0.1.9" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.49" },
 ]
 
 [[package]]
