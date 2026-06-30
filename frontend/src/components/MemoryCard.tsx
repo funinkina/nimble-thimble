@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -10,7 +10,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { deleteMemory, getMemoryRevisions, patchMemory } from "../api";
-import { store } from "../store";
+import { store, useHighlightedMemoryId, useHighlightNonce } from "../store";
 import type { Memory, MemoryRevision } from "../types";
 
 type ActionState =
@@ -54,6 +54,18 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   const [action, setAction] = useState<ActionState>({ kind: "idle" });
   const [showHistory, setShowHistory] = useState(false);
   const [revisions, setRevisions] = useState<MemoryRevision[] | null>(null);
+  const [flashing, setFlashing] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+  const highlightedId = useHighlightedMemoryId();
+  const highlightNonce = useHighlightNonce();
+
+  useEffect(() => {
+    if (highlightedId !== mem.id) return;
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashing(true);
+    const t = window.setTimeout(() => setFlashing(false), 700);
+    return () => window.clearTimeout(t);
+  }, [highlightedId, highlightNonce, mem.id]);
 
   useEffect(() => {
     if (!showHistory || revisions) return;
@@ -120,7 +132,11 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   const busy = action.kind === "busy";
 
   return (
-    <article className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4 animate-fade">
+    <article
+      ref={ref}
+      className={`flex flex-col gap-4 rounded-lg border bg-surface p-4 animate-fade transition-[box-shadow,border-color] duration-300 ease-nothing ${flashing ? "border-accent ring-2 ring-accent" : "border-border"
+        }`}
+    >
       <div className="flex items-start justify-between gap-4">
         {editing ? (
           <textarea

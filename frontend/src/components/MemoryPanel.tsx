@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { getMemories } from "../api";
-import { useSelectedConversationId, useTurnSeq } from "../store";
+import {
+  useHighlightedMemoryId,
+  useHighlightNonce,
+  useSelectedConversationId,
+  useTurnSeq,
+} from "../store";
 import type { Memory, MemoryStatus, Scope } from "../types";
 import { MemoryCard } from "./MemoryCard";
 
@@ -30,11 +35,21 @@ const EMPTY = "font-mono text-body-sm tracking-[0.06em] text-faint";
 export function MemoryPanel() {
   const turnSeq = useTurnSeq();
   const conversationId = useSelectedConversationId();
+  const highlightedId = useHighlightedMemoryId();
+  const highlightNonce = useHighlightNonce();
   const [status, setStatus] = useState<MemoryStatus | "all">("all");
   const [scope, setScope] = useState<Scope | "all">("all");
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // If a clicked trace id points at a card a filter is hiding, drop the filters
+  // so it renders (and the card's own effect can scroll/flash it into view).
+  useEffect(() => {
+    if (!highlightedId || memories.some((m) => m.id === highlightedId)) return;
+    if (status !== "all") setStatus("all");
+    if (scope !== "all") setScope("all");
+  }, [highlightedId, highlightNonce, memories, status, scope]);
 
   useEffect(() => {
     if (!conversationId) {

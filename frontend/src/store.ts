@@ -13,6 +13,10 @@ interface State {
   // Multi-chat: the active conversation and the sidebar list.
   selectedConversationId: string | null;
   conversations: Conversation[];
+  // Memory card to flash/scroll-to (driven by clicking ids in the trace pane).
+  // The nonce re-fires the effect when the same id is clicked twice.
+  highlightedMemoryId: string | null;
+  highlightNonce: number;
 }
 
 let state: State = {
@@ -21,6 +25,8 @@ let state: State = {
   lastResponse: null,
   selectedConversationId: null,
   conversations: [],
+  highlightedMemoryId: null,
+  highlightNonce: 0,
 };
 
 const listeners = new Set<() => void>();
@@ -57,6 +63,13 @@ export const store = {
     if (state.selectedMessageId === messageId) return;
     set({ selectedMessageId: messageId });
   },
+  // Flash + scroll the memory card with this id in the inspector.
+  highlightMemory(memoryId: string) {
+    set({
+      highlightedMemoryId: memoryId,
+      highlightNonce: state.highlightNonce + 1,
+    });
+  },
   // Bump after a memory mutation (edit/forget/delete) so metrics + trace stay live.
   bumpTurn() {
     set({ turnSeq: state.turnSeq + 1 });
@@ -90,3 +103,6 @@ export const useTurnSeq = () => useStore((s) => s.turnSeq);
 export const useSelectedConversationId = () =>
   useStore((s) => s.selectedConversationId);
 export const useConversations = () => useStore((s) => s.conversations);
+export const useHighlightedMemoryId = () =>
+  useStore((s) => s.highlightedMemoryId);
+export const useHighlightNonce = () => useStore((s) => s.highlightNonce);

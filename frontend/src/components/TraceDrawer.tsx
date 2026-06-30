@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { GitMerge, MessageSquare, Search, Sparkles } from "lucide-react";
 import { getTraces } from "../api";
-import { useSelectedMessageId, useTurnSeq } from "../store";
+import { store, useSelectedMessageId, useTurnSeq } from "../store";
 import type {
   ConflictPayload,
   DedupPayload,
@@ -213,12 +213,14 @@ function Reply({ p }: { p: ReplyPayload }) {
         ) : (
           <span className="flex flex-wrap gap-1">
             {p.used_memory_ids.map((id) => (
-              <span
-                className="rounded border border-border bg-raised px-1.5 py-0.5 font-mono text-label text-primary"
+              <button
+                className="rounded border border-border bg-raised px-1.5 py-0.5 font-mono text-label text-primary transition-colors duration-150 ease-nothing hover:border-ink hover:text-ink"
                 key={id}
+                title={`Highlight ${id} in the memory inspector`}
+                onClick={() => store.highlightMemory(id)}
               >
                 {shortId(id)}
-              </span>
+              </button>
             ))}
           </span>
         )}
