@@ -29,7 +29,9 @@ function lastUserText(messages: ChatModelRunOptions["messages"]): string {
 export const chatAdapter: ChatModelAdapter = {
   async run({ messages, abortSignal }: ChatModelRunOptions): Promise<ChatModelRunResult> {
     const text = lastUserText(messages);
-    const res = await postChat(text, abortSignal);
+    const conversationId = store.getState().selectedConversationId;
+    if (!conversationId) throw new Error("no conversation selected");
+    const res = await postChat(text, conversationId, abortSignal);
     store.pushTurn(res);
 
     const meta: TurnMeta = {

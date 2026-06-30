@@ -11,18 +11,25 @@ from .decay import decay_score
 from .models import ChatResponse, MemoryEvent, Relation, RetrievedRef, Status
 
 
-def _active_neighbour(emb: list[float]) -> tuple[str, float] | None:
+def _title_from(msg: str, limit: int = 48) -> str:
+    t = " ".join(msg.split())
+    return t if len(t) <= limit else t[: limit - 1].rstrip() + "…"
+
+
+def _active_neighbour(emb: list[float], conversation_id: str) -> tuple[str, float] | None:
     """Nearest ACTIVE memory to an embedding, as (id, cosine)."""
-    for mem_id, cos in store.knn(emb, config.TOP_K_CANDIDATES):
+    for mem_id, cos in store.knn(emb, config.TOP_K_CANDIDATES, conversation_id):
         row = store.get_row(mem_id)
         if row and row["status"] == Status.active.value:
             return mem_id, cos
     return None
 
 
-def _handle_forget(subject: str, message_id: str) -> MemoryEvent | None:
+def _handle_forget(
+    subject: str, message_id: str, conversation_id: str
+) -> MemoryEvent | None:
     emb = embeddings.embed_one(subject)
-    hit = _active_neighbour(emb)
+    hit = _active_neighbour(emb, conversation_id)
     if hit and hit[1] >= config.RETRIEVE_THRESHOLD:
         store.set_status(hit[0], Status.forgotten)
         row = store.get_row(hit[0])
@@ -34,16 +41,23 @@ def _handle_forget(subject: str, message_id: str) -> MemoryEvent | None:
     return None
 
 
-def process_turn(user_msg: str) -> ChatResponse:
-    history = store.recent_messages(config.HISTORY_TURNS)  # prior turns only
-    message_id = store.add_message("user", user_msg)
+def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
+    history = store.recent_messages(
+        config.HISTORY_TURNS, conversation_id
+    )  # prior turns only
+    message_id = store.add_message("user", user_msg, conversation_id)
+    store.touch_conversation(conversation_id)
+    # First user turn in an untitled conversation gets a title from the message.
+    conv = store.get_conversation(conversation_id)
+    if conv and not conv["title"]:
+        store.set_conversation_title(conversation_id, _title_from(user_msg))
     events: list[MemoryEvent] = []
 
     # 1. EXTRACT
     extraction, ex_meta = llm.extract(user_msg, history)
     forget_resolution = None
     if extraction.forget_request:
-        ev = _handle_forget(extraction.forget_request, message_id)
+        ev = _handle_forget(extraction.forget_request, message_id, conversation_id)
         if ev:
             events.append(ev)
             forget_resolution = ev.detail
@@ -56,6 +70,7 @@ def process_turn(user_msg: str) -> ChatResponse:
             "forget_resolution": forget_resolution,
             "llm": ex_meta,
         },
+        conversation_id,
     )
 
     # 2-4. EMBED -> DEDUP -> CONFLICT/SUPERSEDE for each candidate
@@ -63,7 +78,7 @@ def process_turn(user_msg: str) -> ChatResponse:
     resolutions: list[dict] = []
     for cand in extraction.candidates:
         emb = embeddings.embed_one(cand.text)
-        hit = _active_neighbour(emb)
+        hit = _active_neighbour(emb, conversation_id)
 
         if hit is None or hit[1] < config.CONFLICT_LOW:
             # no meaningful neighbour -> store fresh
@@ -75,6 +90,7 @@ def process_turn(user_msg: str) -> ChatResponse:
                 reason="New fact, no similar memory.",
                 confidence=cand.confidence,
                 embedding=emb,
+                conversation_id=conversation_id,
             )
             events.append(
                 MemoryEvent(type="created", memory_id=mem_id, detail=cand.text)
@@ -129,6 +145,7 @@ def process_turn(user_msg: str) -> ChatResponse:
                 reason=f"{verb} earlier memory: {judgment.reason}",
                 confidence=cand.confidence,
                 embedding=emb,
+                conversation_id=conversation_id,
                 supersedes_id=neigh_id,
             )
             events.append(
@@ -162,6 +179,7 @@ def process_turn(user_msg: str) -> ChatResponse:
             reason=f"Distinct from similar-looking memory: {judgment.reason}",
             confidence=cand.confidence,
             embedding=emb,
+            conversation_id=conversation_id,
         )
         events.append(MemoryEvent(type="created", memory_id=mem_id, detail=cand.text))
         resolutions.append(
@@ -179,14 +197,16 @@ def process_turn(user_msg: str) -> ChatResponse:
         )
 
     if dropped:
-        store.add_trace(message_id, "dedup", {"dropped": dropped})
+        store.add_trace(message_id, "dedup", {"dropped": dropped}, conversation_id)
     if resolutions:
-        store.add_trace(message_id, "conflict", {"resolutions": resolutions})
+        store.add_trace(
+            message_id, "conflict", {"resolutions": resolutions}, conversation_id
+        )
 
     # 5. RETRIEVE — rank active memories by cosine * decay
     q_emb = embeddings.embed_one(user_msg)
     scored = []
-    for mem_id, cos in store.knn(q_emb, config.VEC_OVERFETCH):
+    for mem_id, cos in store.knn(q_emb, config.VEC_OVERFETCH, conversation_id):
         if cos < config.RETRIEVE_THRESHOLD:
             continue
         row = store.get_row(mem_id)
@@ -226,11 +246,12 @@ def process_turn(user_msg: str) -> ChatResponse:
         message_id,
         "retrieve",
         {"retrieved": trace_rows, "threshold": config.RETRIEVE_THRESHOLD},
+        conversation_id,
     )
 
     # 6. REPLY
     reply_text, r_meta = llm.reply(user_msg, history, retrieved_for_reply)
-    store.add_message("assistant", reply_text)
+    store.add_message("assistant", reply_text, conversation_id)
     store.add_trace(
         message_id,
         "reply",
@@ -239,6 +260,7 @@ def process_turn(user_msg: str) -> ChatResponse:
             "reply_preview": reply_text[:280],
             "llm": r_meta,
         },
+        conversation_id,
     )
 
     return ChatResponse(

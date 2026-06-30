@@ -29,6 +29,7 @@ RETRIEVE_THRESHOLD = 0.30  # min cosine to be eligible for retrieval
 TOP_K_CANDIDATES = 5  # neighbours pulled per new candidate
 TOP_K_RETRIEVE = 5  # memories injected into a reply
 VEC_OVERFETCH = 25  # pull this many from vec index before status filtering
+VEC_PREFETCH = 100  # raw vec rows fetched before conversation+status filtering
 
 # --- decay (computed at retrieval, never stored stale) ---
 DECAY_HALF_LIFE_DAYS = 14.0  # recency half-life

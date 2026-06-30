@@ -109,6 +109,25 @@ class ChatResponse(BaseModel):
     retrieved: list[RetrievedRef]
 
 
+class ConversationOut(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+
+
+class RestoredMessage(BaseModel):
+    """One message replayed into the client runtime when restoring a chat.
+    Assistant rows carry the owning user turn's id + retrieved refs so the
+    [N MEMORIES USED] badge and trace selection work after reload."""
+
+    id: str
+    role: str
+    content: str
+    turn_message_id: Optional[str] = None
+    retrieved: list[RetrievedRef] = []
+
+
 class TraceOut(BaseModel):
     id: str
     message_id: str

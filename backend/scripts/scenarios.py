@@ -28,13 +28,31 @@ def check(name: str, ok: bool, detail: str = ""):
         _failures += 1
 
 
+# All scenarios run inside a single fresh conversation (multi-chat scoping).
+CONV: str = ""
+
+
+def ensure_conv() -> str:
+    global CONV
+    if not CONV:
+        r = requests.post(f"{BASE}/conversations", json={}, timeout=30)
+        r.raise_for_status()
+        CONV = r.json()["id"]
+    return CONV
+
+
 def chat(msg: str) -> dict:
-    r = requests.post(f"{BASE}/chat", json={"message": msg}, timeout=120)
+    r = requests.post(
+        f"{BASE}/chat",
+        json={"message": msg, "conversation_id": ensure_conv()},
+        timeout=120,
+    )
     r.raise_for_status()
     return r.json()
 
 
 def memories(**params) -> list[dict]:
+    params["conversation_id"] = ensure_conv()
     return requests.get(f"{BASE}/memories", params=params, timeout=30).json()
 
 
@@ -149,7 +167,9 @@ def main():
     check("forgotten memory no longer retrieved", not leaked, f"leaked={leaked}")
 
     print("\n=== METRICS ===")
-    m = requests.get(f"{BASE}/metrics", timeout=30).json()
+    m = requests.get(
+        f"{BASE}/metrics", params={"conversation_id": ensure_conv()}, timeout=30
+    ).json()
     print("  " + ", ".join(f"{k}={v}" for k, v in m.items() if not isinstance(v, dict)))
     check("metrics counted LLM calls", m["llm_calls"] > 0)
 

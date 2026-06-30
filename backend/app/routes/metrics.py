@@ -7,21 +7,27 @@ router = APIRouter()
 
 
 @router.get("/metrics", response_model=Metrics)
-def get_metrics():
+def get_metrics(conversation_id: str):
     by_status = {
         r["status"]: r["n"]
-        for r in db.query("SELECT status, COUNT(*) AS n FROM memories GROUP BY status")
+        for r in db.query(
+            "SELECT status, COUNT(*) AS n FROM memories WHERE conversation_id=? GROUP BY status",
+            (conversation_id,),
+        )
     }
     by_scope = {
         r["scope"]: r["n"]
-        for r in db.query("SELECT scope, COUNT(*) AS n FROM memories GROUP BY scope")
+        for r in db.query(
+            "SELECT scope, COUNT(*) AS n FROM memories WHERE conversation_id=? GROUP BY scope",
+            (conversation_id,),
+        )
     }
 
     total_candidates = dedup_count = supersede_count = update_count = 0
     cosines: list[float] = []
     metas: list[dict] = []
 
-    for t in store.all_traces():
+    for t in store.all_traces(conversation_id):
         stage, p = t["stage"], t["payload"]
         if isinstance(p.get("llm"), dict):
             metas.append(p["llm"])
@@ -50,7 +56,7 @@ def get_metrics():
     return Metrics(
         memories_by_status=by_status,
         memories_by_scope=by_scope,
-        total_user_messages=store.count_user_messages(),
+        total_user_messages=store.count_user_messages(conversation_id),
         total_candidates=total_candidates,
         dedup_count=dedup_count,
         supersede_count=supersede_count,

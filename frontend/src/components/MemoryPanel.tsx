@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getMemories } from "../api";
-import { useTurnSeq } from "../store";
+import { useSelectedConversationId, useTurnSeq } from "../store";
 import type { Memory, MemoryStatus, Scope } from "../types";
 import { MemoryCard } from "./MemoryCard";
 
@@ -22,6 +22,7 @@ const SCOPE_FILTERS: { key: Scope | "all"; label: string }[] = [
 
 export function MemoryPanel() {
   const turnSeq = useTurnSeq();
+  const conversationId = useSelectedConversationId();
   const [status, setStatus] = useState<MemoryStatus | "all">("all");
   const [scope, setScope] = useState<Scope | "all">("all");
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -29,9 +30,15 @@ export function MemoryPanel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!conversationId) {
+      setMemories([]);
+      setLoading(false);
+      return;
+    }
     let live = true;
     setLoading(true);
     getMemories(
+      conversationId,
       status === "all" ? undefined : status,
       scope === "all" ? undefined : scope,
     )
@@ -48,7 +55,7 @@ export function MemoryPanel() {
     return () => {
       live = false;
     };
-  }, [status, scope, turnSeq]);
+  }, [status, scope, turnSeq, conversationId]);
 
   return (
     <section className="pane">

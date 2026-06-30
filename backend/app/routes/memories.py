@@ -10,8 +10,10 @@ router = APIRouter()
 
 
 @router.get("/memories", response_model=list[MemoryOut])
-def list_memories(status: Optional[str] = None, scope: Optional[str] = None):
-    return store.list_memories(status=status, scope=scope)
+def list_memories(
+    conversation_id: str, status: Optional[str] = None, scope: Optional[str] = None
+):
+    return store.list_memories(conversation_id, status=status, scope=scope)
 
 
 class MemoryPatch(BaseModel):

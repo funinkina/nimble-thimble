@@ -159,3 +159,20 @@ export interface TurnMeta {
   retrieved: RetrievedRef[];
   memory_events: MemoryEvent[];
 }
+
+export interface Conversation {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// One message replayed into the runtime when restoring a chat. Assistant rows
+// carry the owning user turn's id + retrieved refs to rebuild the badge/trace.
+export interface RestoredMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  turn_message_id: string | null;
+  retrieved: RetrievedRef[];
+}

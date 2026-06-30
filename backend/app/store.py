@@ -23,29 +23,102 @@ def _id() -> str:
     return uuid.uuid4().hex
 
 
+# ---- conversations ----
+def create_conversation(title: str = "") -> dict:
+    cid = _id()
+    ts = now_iso()
+    db.write(
+        lambda c: c.execute(
+            "INSERT INTO conversations(id, title, created_at, updated_at) VALUES (?,?,?,?)",
+            (cid, title, ts, ts),
+        )
+    )
+    return {"id": cid, "title": title, "created_at": ts, "updated_at": ts}
+
+
+def list_conversations() -> list[dict]:
+    rows = db.query(
+        "SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC, rowid DESC"
+    )
+    return [dict(r) for r in rows]
+
+
+def get_conversation(cid: str) -> dict | None:
+    r = db.query_one(
+        "SELECT id, title, created_at, updated_at FROM conversations WHERE id=?", (cid,)
+    )
+    return dict(r) if r else None
+
+
+def set_conversation_title(cid: str, title: str) -> None:
+    db.write(
+        lambda c: c.execute(
+            "UPDATE conversations SET title=?, updated_at=? WHERE id=?",
+            (title, now_iso(), cid),
+        )
+    )
+
+
+def touch_conversation(cid: str) -> None:
+    db.write(
+        lambda c: c.execute(
+            "UPDATE conversations SET updated_at=? WHERE id=?", (now_iso(), cid)
+        )
+    )
+
+
+def delete_conversation(cid: str) -> None:
+    def _do(c):
+        c.execute(
+            "DELETE FROM vec_memories WHERE memory_id IN "
+            "(SELECT id FROM memories WHERE conversation_id=?)",
+            (cid,),
+        )
+        c.execute("DELETE FROM memories WHERE conversation_id=?", (cid,))
+        c.execute("DELETE FROM traces WHERE conversation_id=?", (cid,))
+        c.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
+        c.execute("DELETE FROM conversations WHERE id=?", (cid,))
+
+    db.write(_do)
+
+
 # ---- messages ----
-def add_message(role: str, content: str) -> str:
+def add_message(role: str, content: str, conversation_id: str) -> str:
     mid = _id()
     ts = now_iso()
     db.write(
         lambda c: c.execute(
-            "INSERT INTO messages(id, role, content, created_at) VALUES (?,?,?,?)",
-            (mid, role, content, ts),
+            "INSERT INTO messages(id, conversation_id, role, content, created_at) VALUES (?,?,?,?,?)",
+            (mid, conversation_id, role, content, ts),
         )
     )
     return mid
 
 
-def recent_messages(limit: int) -> list[dict]:
+def recent_messages(limit: int, conversation_id: str) -> list[dict]:
     rows = db.query(
-        "SELECT role, content FROM messages ORDER BY created_at DESC, rowid DESC LIMIT ?",
-        (limit,),
+        "SELECT role, content FROM messages WHERE conversation_id=? "
+        "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+        (conversation_id, limit),
     )
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 
-def count_user_messages() -> int:
-    r = db.query_one("SELECT COUNT(*) AS n FROM messages WHERE role='user'")
+def messages_for(conversation_id: str) -> list[dict]:
+    """Full ordered history for one conversation, for restore on the client."""
+    rows = db.query(
+        "SELECT id, role, content FROM messages WHERE conversation_id=? "
+        "ORDER BY created_at ASC, rowid ASC",
+        (conversation_id,),
+    )
+    return [dict(r) for r in rows]
+
+
+def count_user_messages(conversation_id: str) -> int:
+    r = db.query_one(
+        "SELECT COUNT(*) AS n FROM messages WHERE role='user' AND conversation_id=?",
+        (conversation_id,),
+    )
     return r["n"] if r else 0
 
 
@@ -59,6 +132,7 @@ def add_memory(
     reason: str,
     confidence: float,
     embedding: list[float],
+    conversation_id: str,
     supersedes_id: str | None = None,
 ) -> str:
     mem_id = _id()
@@ -67,11 +141,13 @@ def add_memory(
 
     def _do(c):
         c.execute(
-            """INSERT INTO memories(id, text, scope, status, source_message_id, source_excerpt,
-                   reason, confidence, supersedes_id, use_count, last_used_at, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO memories(id, conversation_id, text, scope, status, source_message_id,
+                   source_excerpt, reason, confidence, supersedes_id, use_count, last_used_at,
+                   created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 mem_id,
+                conversation_id,
                 text,
                 scope.value if isinstance(scope, Scope) else scope,
                 Status.active.value,
@@ -148,21 +224,36 @@ def get_row(mem_id: str):
     return db.query_one("SELECT * FROM memories WHERE id=?", (mem_id,))
 
 
-def knn(embedding: list[float], k: int) -> list[tuple[str, float]]:
-    """Return [(memory_id, cosine_similarity)] nearest first."""
+def knn(
+    embedding: list[float], k: int, conversation_id: str
+) -> list[tuple[str, float]]:
+    """Return up to k [(memory_id, cosine_similarity)] nearest first, scoped to
+    one conversation. The vec0 index can't join on memories.conversation_id, so
+    over-fetch VEC_PREFETCH raw neighbours and filter to the conversation here."""
+    from .config import VEC_PREFETCH
+
     blob = sqlite_vec.serialize_float32(embedding)
     rows = db.query(
         "SELECT memory_id, distance FROM vec_memories WHERE embedding MATCH ? AND k = ? ORDER BY distance",
-        (blob, k),
+        (blob, max(k, VEC_PREFETCH)),
     )
-    return [(r["memory_id"], 1.0 - r["distance"]) for r in rows]
+    out: list[tuple[str, float]] = []
+    for r in rows:
+        owner = db.query_one(
+            "SELECT conversation_id FROM memories WHERE id=?", (r["memory_id"],)
+        )
+        if owner and owner["conversation_id"] == conversation_id:
+            out.append((r["memory_id"], 1.0 - r["distance"]))
+            if len(out) >= k:
+                break
+    return out
 
 
 def list_memories(
-    status: str | None = None, scope: str | None = None
+    conversation_id: str, status: str | None = None, scope: str | None = None
 ) -> list[MemoryOut]:
     sql = "SELECT * FROM memories"
-    clauses, params = [], []
+    clauses, params = ["conversation_id=?"], [conversation_id]
     if status:
         clauses.append("status=?")
         params.append(status)
@@ -199,13 +290,32 @@ def row_to_out(r) -> MemoryOut:
 
 
 # ---- traces ----
-def add_trace(message_id: str, stage: str, payload: dict) -> None:
+def add_trace(
+    message_id: str, stage: str, payload: dict, conversation_id: str
+) -> None:
     db.write(
         lambda c: c.execute(
-            "INSERT INTO traces(id, message_id, stage, payload, created_at) VALUES (?,?,?,?,?)",
-            (_id(), message_id, stage, json.dumps(payload, default=str), now_iso()),
+            "INSERT INTO traces(id, conversation_id, message_id, stage, payload, created_at) VALUES (?,?,?,?,?,?)",
+            (
+                _id(),
+                conversation_id,
+                message_id,
+                stage,
+                json.dumps(payload, default=str),
+                now_iso(),
+            ),
         )
     )
+
+
+def retrieved_by_user_message(conversation_id: str) -> dict[str, list[dict]]:
+    """Map each user message_id to the retrieved rows from its retrieve trace,
+    for rebuilding the [N MEMORIES USED] badge when restoring a conversation."""
+    rows = db.query(
+        "SELECT message_id, payload FROM traces WHERE conversation_id=? AND stage='retrieve'",
+        (conversation_id,),
+    )
+    return {r["message_id"]: json.loads(r["payload"]).get("retrieved", []) for r in rows}
 
 
 def traces_for(message_id: str) -> list[TraceOut]:
@@ -225,6 +335,8 @@ def traces_for(message_id: str) -> list[TraceOut]:
     ]
 
 
-def all_traces() -> list[dict]:
-    rows = db.query("SELECT stage, payload FROM traces")
+def all_traces(conversation_id: str) -> list[dict]:
+    rows = db.query(
+        "SELECT stage, payload FROM traces WHERE conversation_id=?", (conversation_id,)
+    )
     return [{"stage": r["stage"], "payload": json.loads(r["payload"])} for r in rows]

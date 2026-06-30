@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getMetrics } from "../api";
-import { useTurnSeq } from "../store";
+import { useSelectedConversationId, useTurnSeq } from "../store";
 import type { Metrics } from "../types";
 
 const STATUS_ORDER = ["active", "updated", "superseded", "forgotten"];
@@ -66,12 +66,14 @@ function Metric({
 
 export function MetricsBar() {
   const turnSeq = useTurnSeq();
+  const conversationId = useSelectedConversationId();
   const [m, setM] = useState<Metrics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!conversationId) return;
     let live = true;
-    getMetrics()
+    getMetrics(conversationId)
       .then((data) => {
         if (!live) return;
         setM(data);
@@ -84,7 +86,7 @@ export function MetricsBar() {
     return () => {
       live = false;
     };
-  }, [turnSeq]);
+  }, [turnSeq, conversationId]);
 
   const active = m?.memories_by_status.active ?? 0;
 

@@ -1,8 +1,10 @@
 import type {
   ChatResponse,
+  Conversation,
   Memory,
   MemoryStatus,
   Metrics,
+  RestoredMessage,
   Scope,
   Trace,
 } from "./types";
@@ -21,23 +23,46 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function postChat(message: string, signal?: AbortSignal): Promise<ChatResponse> {
+export function postChat(
+  message: string,
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
   return req<ChatResponse>("/chat", {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, conversation_id: conversationId }),
     signal,
   });
 }
 
 export function getMemories(
+  conversationId: string,
   status?: MemoryStatus,
   scope?: Scope,
 ): Promise<Memory[]> {
-  const q = new URLSearchParams();
+  const q = new URLSearchParams({ conversation_id: conversationId });
   if (status) q.set("status", status);
   if (scope) q.set("scope", scope);
-  const qs = q.toString();
-  return req<Memory[]>(`/memories${qs ? `?${qs}` : ""}`);
+  return req<Memory[]>(`/memories?${q.toString()}`);
+}
+
+export function listConversations(): Promise<Conversation[]> {
+  return req<Conversation[]>("/conversations");
+}
+
+export function createConversation(title = ""): Promise<Conversation> {
+  return req<Conversation>("/conversations", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function getConversationMessages(id: string): Promise<RestoredMessage[]> {
+  return req<RestoredMessage[]>(`/conversations/${id}/messages`);
+}
+
+export function deleteConversation(id: string): Promise<{ deleted: string }> {
+  return req<{ deleted: string }>(`/conversations/${id}`, { method: "DELETE" });
 }
 
 export function patchMemory(
@@ -58,6 +83,6 @@ export function getTraces(messageId: string): Promise<Trace[]> {
   return req<Trace[]>(`/traces/${messageId}`);
 }
 
-export function getMetrics(): Promise<Metrics> {
-  return req<Metrics>("/metrics");
+export function getMetrics(conversationId: string): Promise<Metrics> {
+  return req<Metrics>(`/metrics?conversation_id=${encodeURIComponent(conversationId)}`);
 }

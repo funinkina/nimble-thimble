@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
-from .routes import chat, memories, metrics, traces
+from .routes import chat, conversations, memories, metrics, traces
 
 
 @asynccontextmanager
@@ -29,6 +29,7 @@ def health():
 
 
 app.include_router(chat.router)
+app.include_router(conversations.router)
 app.include_router(memories.router)
 app.include_router(traces.router)
 app.include_router(metrics.router)
