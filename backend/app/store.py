@@ -12,7 +12,14 @@ from datetime import datetime, timezone
 import sqlite_vec
 
 from . import db, decay
-from .models import MemoryOut, MemoryRevisionOut, Scope, Status, TraceOut
+from .models import (
+    LIVE_STATUS_VALUES,
+    MemoryOut,
+    MemoryRevisionOut,
+    Scope,
+    Status,
+    TraceOut,
+)
 
 
 def now_iso() -> str:
@@ -427,12 +434,13 @@ def bm25(query: str, k: int, conversation_id: str) -> list[tuple[str, float]]:
     match = _fts_query(query)
     if not match:
         return []
+    placeholders = ",".join("?" * len(LIVE_STATUS_VALUES))
     rows = db.query(
         "SELECT f.memory_id AS memory_id, bm25(memories_fts) AS score "
         "FROM memories_fts f JOIN memories m ON m.id = f.memory_id "
-        "WHERE memories_fts MATCH ? AND m.conversation_id = ? AND m.status = ? "
+        f"WHERE memories_fts MATCH ? AND m.conversation_id = ? AND m.status IN ({placeholders}) "
         "ORDER BY score LIMIT ?",
-        (match, conversation_id, Status.active.value, k),
+        (match, conversation_id, *LIVE_STATUS_VALUES, k),
     )
     # bm25() returns a negative number; smaller = better. Negate for "higher=better".
     return [(r["memory_id"], -r["score"]) for r in rows]
@@ -506,6 +514,17 @@ def retrieved_by_user_message(conversation_id: str) -> dict[str, list[dict]]:
         (conversation_id,),
     )
     return {r["message_id"]: json.loads(r["payload"]).get("retrieved", []) for r in rows}
+
+
+def events_by_user_message(conversation_id: str) -> dict[str, list[dict]]:
+    """Map each user message_id to its turn's memory events (created/updated/etc.),
+    read back from the reply trace, for rebuilding the 'changed this turn' strip
+    when restoring a conversation."""
+    rows = db.query(
+        "SELECT message_id, payload FROM traces WHERE conversation_id=? AND stage='reply'",
+        (conversation_id,),
+    )
+    return {r["message_id"]: json.loads(r["payload"]).get("events", []) for r in rows}
 
 
 def traces_for(message_id: str) -> list[TraceOut]:

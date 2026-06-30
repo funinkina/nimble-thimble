@@ -71,6 +71,54 @@ function fmtConf(c: number | null): string {
   return c == null ? "—" : c.toFixed(2);
 }
 
+type DiffPart = { t: string; op: "same" | "add" | "del" };
+
+// Word-level diff via LCS. Tokens keep their surrounding whitespace (split on
+// captured \s+) so the reconstructed text preserves spacing exactly. Used to show
+// *what changed* between a revision's old_text and new_text, not two separate blobs.
+function wordDiff(from: string, to: string): DiffPart[] {
+  const a = from.split(/(\s+)/);
+  const b = to.split(/(\s+)/);
+  const n = a.length;
+  const m = b.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array(m + 1).fill(0),
+  );
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] =
+        a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out: DiffPart[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) out.push({ t: a[i++], op: "same" }), j++;
+    else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({ t: a[i++], op: "del" });
+    else out.push({ t: b[j++], op: "add" });
+  }
+  while (i < n) out.push({ t: a[i++], op: "del" });
+  while (j < m) out.push({ t: b[j++], op: "add" });
+  return out;
+}
+
+const DIFF_CLASS: Record<DiffPart["op"], string> = {
+  same: "text-muted",
+  add: "text-success",
+  del: "text-accent line-through",
+};
+
+function TextDiff({ from, to }: { from: string; to: string }) {
+  return (
+    <div className="font-sans text-body-sm leading-[1.4]">
+      {wordDiff(from, to).map((p, i) => (
+        <span key={i} className={DIFF_CLASS[p.op]}>
+          {p.t}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function MemoryCard({ mem }: { mem: Memory }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(mem.text);
@@ -94,6 +142,13 @@ export function MemoryCard({ mem }: { mem: Memory }) {
       }
     }
   }
+
+  // Keep the edit draft in sync when the memory text changes upstream (a refetch
+  // after another turn, a refine folding new text in). Guard on `editing` so an
+  // in-flight edit is never clobbered mid-keystroke.
+  useEffect(() => {
+    if (!editing) setDraft(mem.text);
+  }, [mem.text, editing]);
 
   useEffect(() => {
     if (highlightedId !== mem.id) return;
@@ -300,16 +355,20 @@ export function MemoryCard({ mem }: { mem: Memory }) {
                           {new Date(rev.created_at).toLocaleString()}
                         </span>
                       </div>
-                      {rev.old_text && rev.old_text !== rev.new_text && (
-                        <div className="font-sans text-body-sm leading-[1.4] text-faint line-through">
-                          {rev.old_text}
-                        </div>
-                      )}
-                      {rev.new_text && (
+                      {rev.old_text &&
+                      rev.new_text &&
+                      rev.old_text !== rev.new_text ? (
+                        // refined / superseded / edited: show the word-level change
+                        <TextDiff from={rev.old_text} to={rev.new_text} />
+                      ) : rev.new_text ? (
                         <div className="font-sans text-body-sm leading-[1.4] text-muted">
                           {rev.new_text}
                         </div>
-                      )}
+                      ) : rev.old_text ? (
+                        <div className="font-sans text-body-sm leading-[1.4] text-faint line-through">
+                          {rev.old_text}
+                        </div>
+                      ) : null}
                       {rev.old_confidence !== rev.new_confidence && (
                         <div className="font-mono text-label text-faint">
                           conf {fmtConf(rev.old_confidence)} → {fmtConf(rev.new_confidence)}

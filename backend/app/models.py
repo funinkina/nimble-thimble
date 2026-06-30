@@ -18,9 +18,17 @@ class Scope(str, Enum):
 
 class Status(str, Enum):
     active = "active"
-    updated = "updated"  # refined by a newer memory
+    updated = "updated"  # refined in place by a newer message; still current + retrievable
     superseded = "superseded"  # contradicted/replaced by a newer memory
     forgotten = "forgotten"  # explicitly forgotten by the user
+
+
+# A memory is "live" (retrievable, and a valid dedup/conflict neighbour) when it is
+# either freshly created (active) or refined in place (updated). A refined fact is
+# still the current fact, so `updated` rows stay in play; only superseded/forgotten
+# drop out. Single source of truth for every active-vs-live gate in the pipeline.
+LIVE_STATUSES = (Status.active, Status.updated)
+LIVE_STATUS_VALUES = tuple(s.value for s in LIVE_STATUSES)
 
 
 class Relation(str, Enum):
@@ -147,6 +155,7 @@ class RestoredMessage(BaseModel):
     content: str
     turn_message_id: Optional[str] = None
     retrieved: list[RetrievedRef] = []
+    memory_events: list[MemoryEvent] = []
 
 
 class TraceOut(BaseModel):

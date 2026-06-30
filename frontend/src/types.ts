@@ -211,4 +211,5 @@ export interface RestoredMessage {
   content: string;
   turn_message_id: string | null;
   retrieved: RetrievedRef[];
+  memory_events: MemoryEvent[];
 }

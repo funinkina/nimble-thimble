@@ -2,7 +2,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import store
-from ..models import ConversationOut, RestoredMessage, RetrievedRef
+from ..models import (
+    ConversationOut,
+    MemoryEvent,
+    RestoredMessage,
+    RetrievedRef,
+)
 
 router = APIRouter()
 
@@ -29,6 +34,7 @@ def conversation_messages(conversation_id: str):
     if not store.get_conversation(conversation_id):
         raise HTTPException(404, "conversation not found")
     retrieved_by_msg = store.retrieved_by_user_message(conversation_id)
+    events_by_msg = store.events_by_user_message(conversation_id)
     out: list[RestoredMessage] = []
     last_user_id: str | None = None
     for m in store.messages_for(conversation_id):
@@ -37,6 +43,7 @@ def conversation_messages(conversation_id: str):
             out.append(RestoredMessage(id=m["id"], role=m["role"], content=m["content"]))
         else:
             rows = retrieved_by_msg.get(last_user_id or "", [])
+            evs = events_by_msg.get(last_user_id or "", [])
             out.append(
                 RestoredMessage(
                     id=m["id"],
@@ -44,6 +51,7 @@ def conversation_messages(conversation_id: str):
                     content=m["content"],
                     turn_message_id=last_user_id,
                     retrieved=[RetrievedRef(**r) for r in rows],
+                    memory_events=[MemoryEvent(**e) for e in evs],
                 )
             )
     return out

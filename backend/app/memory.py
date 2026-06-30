@@ -7,10 +7,18 @@ Every stage writes a trace so any reply can be explained end to end.
 from __future__ import annotations
 
 import math
+from typing import Iterator, NamedTuple
 
-from . import config, embeddings, llm, reranker, store
+from . import config, db, embeddings, llm, reranker, store
 from .decay import decay_score
-from .models import ChatResponse, MemoryEvent, Relation, RetrievedRef, Status
+from .models import (
+    LIVE_STATUS_VALUES,
+    ChatResponse,
+    MemoryEvent,
+    Relation,
+    RetrievedRef,
+    Status,
+)
 
 
 def _rrf(rank: int) -> float:
@@ -55,11 +63,11 @@ def retrieve_memories(
     rows: list[tuple[str, dict]] = []
     for mid, info in cand.items():
         row = store.get_row(mid)
-        if not row or row["status"] != Status.active.value:
+        if not row or row["status"] not in LIVE_STATUS_VALUES:
             continue
-        info["rrf_score"] = (
-            _rrf(info["vec_rank"]) if "vec_rank" in info else 0.0
-        ) + (_rrf(info["bm25_rank"]) if "bm25_rank" in info else 0.0)
+        info["rrf_score"] = (_rrf(info["vec_rank"]) if "vec_rank" in info else 0.0) + (
+            _rrf(info["bm25_rank"]) if "bm25_rank" in info else 0.0
+        )
         info["row"] = row
         rows.append((mid, info))
 
@@ -109,12 +117,14 @@ def _nudge(c: float) -> float:
 def _active_neighbour(
     emb: list[float], conversation_id: str, exclude_id: str | None = None
 ) -> tuple[str, float] | None:
-    """Nearest ACTIVE memory to an embedding, as (id, cosine). Skips exclude_id."""
+    """Nearest LIVE memory (active or updated) to an embedding, as (id, cosine).
+    Skips exclude_id. A refined ('updated') fact is still current, so it stays a
+    valid dedup/conflict neighbour for the next message about the same subject."""
     for mem_id, cos in store.knn(emb, config.TOP_K_CANDIDATES, conversation_id):
         if mem_id == exclude_id:
             continue
         row = store.get_row(mem_id)
-        if row and row["status"] == Status.active.value:
+        if row and row["status"] in LIVE_STATUS_VALUES:
             return mem_id, cos
     return None
 
@@ -163,7 +173,25 @@ def _handle_forget(
     return None
 
 
+class _Prepared(NamedTuple):
+    """Everything stages 1-5 produce, handed to the reply stage (stage 6)."""
+
+    message_id: str
+    history: list[dict]
+    events: list[MemoryEvent]
+    retrieved_refs: list[RetrievedRef]
+    retrieved_for_reply: list[dict]
+
+
 def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
+    # Serialize the whole read-judge-write pipeline per conversation so two
+    # concurrent /chat requests for the same conversation can't interleave on the
+    # same memory. Different conversations still run fully in parallel.
+    with db.turn_lock(conversation_id):
+        return _run_turn(user_msg, conversation_id)
+
+
+def _prepare_turn(user_msg: str, conversation_id: str) -> _Prepared:
     history = store.recent_messages(
         config.HISTORY_TURNS, conversation_id
     )  # prior turns only
@@ -337,14 +365,15 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
         if rel == Relation.update:
             # Refine: same subject, sharper value. Fold into the SAME canonical row
             # in place, append a revision, carry decay strength forward. Stable id —
-            # a refined fact is still the current fact, so the row stays active.
+            # a refined fact is still the current fact, so the row stays LIVE, just
+            # flagged `updated` so the inspector can surface it as a distinct state.
             new_conf = _nudge(max(neigh["confidence"], cand.confidence))
             store.revise_memory(
                 neigh_id,
                 text=cand.text,
                 embedding=emb,
                 confidence=new_conf,
-                status=Status.active,
+                status=Status.updated,
                 bump=True,
             )
             store.add_revision(
@@ -355,7 +384,7 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
                 old_confidence=neigh["confidence"],
                 new_confidence=new_conf,
                 old_status=neigh["status"],
-                new_status=Status.active.value,
+                new_status=Status.updated.value,
                 source_message_id=message_id,
                 source_excerpt=cand.source_excerpt,
                 reason=f"Refines earlier memory: {judgment.reason}",
@@ -525,23 +554,78 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
         conversation_id,
     )
 
-    # 6. REPLY
-    reply_text, r_meta = llm.reply(user_msg, history, retrieved_for_reply)
+    # Stages 1-5 are done; the reply (stage 6) is driven by the caller so it can be
+    # either awaited whole (`_run_turn`) or streamed token-by-token (`_run_turn_stream`).
+    return _Prepared(
+        message_id=message_id,
+        history=history,
+        events=events,
+        retrieved_refs=retrieved_refs,
+        retrieved_for_reply=retrieved_for_reply,
+    )
+
+
+def _persist_reply(
+    prep: "_Prepared", reply_text: str, r_meta: dict, conversation_id: str
+) -> None:
+    """Stage 6 side-effects, shared by the streaming and non-streaming paths:
+    store the assistant message and the reply trace (incl. the turn's events for F3)."""
     store.add_message("assistant", reply_text, conversation_id)
     store.add_trace(
-        message_id,
+        prep.message_id,
         "reply",
         {
-            "used_memory_ids": [r.memory_id for r in retrieved_refs],
+            "used_memory_ids": [r.memory_id for r in prep.retrieved_refs],
             "reply_preview": reply_text[:280],
+            "events": [e.model_dump() for e in prep.events],
             "llm": r_meta,
         },
         conversation_id,
     )
 
+
+def _run_turn(user_msg: str, conversation_id: str) -> ChatResponse:
+    prep = _prepare_turn(user_msg, conversation_id)
+    # 6. REPLY (whole)
+    reply_text, r_meta = llm.reply(user_msg, prep.history, prep.retrieved_for_reply)
+    _persist_reply(prep, reply_text, r_meta, conversation_id)
     return ChatResponse(
         reply=reply_text,
-        message_id=message_id,
-        memory_events=events,
-        retrieved=retrieved_refs,
+        message_id=prep.message_id,
+        memory_events=prep.events,
+        retrieved=prep.retrieved_refs,
     )
+
+
+def process_turn_stream(user_msg: str, conversation_id: str) -> "Iterator[dict]":
+    """Streaming sibling of process_turn. Holds the per-conversation turn lock for
+    the whole pipeline, then yields SSE-ready dicts:
+      {"type":"meta", message_id, memory_events, retrieved}  -- stages 1-5 done
+      {"type":"delta", "text": ...}                          -- one per reply chunk
+      {"type":"done"}                                        -- reply persisted
+    """
+    with db.turn_lock(conversation_id):
+        yield from _run_turn_stream(user_msg, conversation_id)
+
+
+def _run_turn_stream(user_msg: str, conversation_id: str) -> "Iterator[dict]":
+    prep = _prepare_turn(user_msg, conversation_id)
+    yield {
+        "type": "meta",
+        "message_id": prep.message_id,
+        "memory_events": [e.model_dump() for e in prep.events],
+        "retrieved": [r.model_dump() for r in prep.retrieved_refs],
+    }
+    # 6. REPLY (streamed)
+    reply_text, r_meta = "", {}
+    for kind, data in llm.reply_stream(
+        user_msg, prep.history, prep.retrieved_for_reply
+    ):
+        if kind == "delta":
+            yield {"type": "delta", "text": data}
+        else:  # "done": full authoritative text + meta
+            reply_text, r_meta = data
+    _persist_reply(prep, reply_text, r_meta, conversation_id)
+    # Carry the authoritative full text so the client renders it even if no deltas
+    # streamed (the degrade-to-fallback path yields a "done" with no deltas).
+    yield {"type": "done", "reply": reply_text}

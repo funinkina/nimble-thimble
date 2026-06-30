@@ -39,7 +39,7 @@ so it lives in plain code.)
    text, scope, a quoted `source_excerpt` for evidence, confidence) plus an
    optional `forget_request`. Chit-chat yields an empty list.
 2. **embed** — each candidate is embedded locally (`fastembed`, bge-base, 768-d, L2-normalized).
-3. **dedup** — find the nearest *active* memory. If similarity ≥ `DEDUP_THRESHOLD`
+3. **dedup** — find the nearest *live* memory (active or updated). If similarity ≥ `DEDUP_THRESHOLD`
    the candidate is a duplicate **deterministically** — dropped and the existing
    memory reinforced, with **no LLM call** (a near-identical embedding is not an
    ambiguous case, so spending a judge call on it would be waste; the dedup trace
@@ -50,7 +50,7 @@ so it lives in plain code.)
    status transition (below). This is the latent/deterministic split made literal:
    the model is consulted only where similarity alone can't decide.
 5. **retrieve** — embed the user message, pull candidates from the vec index,
-   keep active ones above `RETRIEVE_THRESHOLD`, rank by **cosine × decay**, take
+   keep live ones (active or updated) above `RETRIEVE_THRESHOLD`, rank by **cosine × decay**, take
    the top *k*, and reinforce them. Each retrieved row records cosine, decay,
    final score, rank, and its status. An optional hybrid path (BM25 fused with
    RRF, then a local cross-encoder rerank — both behind `USE_BM25`/`USE_RERANK`)
@@ -83,10 +83,11 @@ believe, and when" stays answerable.)
         │                     │                          (no LLM call)
      CREATE              relation:                          │
      active            ├ duplicate → DROP + REINFORCE   DROP candidate +
-     + 'created' rev   ├ update  → fold IN PLACE:        REINFORCE existing
-                       │           text re-embedded,     (bump usage, nudge
-                       │           confidence nudged↑,    confidence, append
-                       │           +'refined' rev          'reinforced' rev)
+     + 'created' rev   ├ update  → fold IN PLACE →       REINFORCE existing
+                       │           UPDATED status:       (bump usage, nudge
+                       │           text re-embedded,      confidence, append
+                       │           confidence nudged↑,    'reinforced' rev)
+                       │           +'refined' rev
                        ├ supersede→ INVALIDATE-NOT-DELETE:
                        │           old row → SUPERSEDED (kept, faded);
                        │           NEW active row, linked via supersedes_id;
@@ -97,14 +98,18 @@ believe, and when" stays answerable.)
                          ⇒ FORGOTTEN +'forgotten' rev   (else: forgets nothing)
 ```
 
-A **refined** memory stays `active` with its **decay strength carried forward**
+A **refined** memory keeps its id, folds the sharper text in place, and flips to
+the `updated` status with its **decay strength carried forward**
 (`use_count`/`last_used_at` are not reset), so a long-reinforced fact keeps its
-rank when sharpened. A **superseded** memory moves to the `superseded` status: it
-drops out of retrieval (only `active` rows are retrieved) but stays in the
-inspector, faded, with a forward link to the fact that replaced it. So three
-statuses are live resting states — `active`, `superseded`, `forgotten` — while
-`updated` is a *transition*, surfaced as a per-turn event and a `refined`
-revision rather than a status a row rests in. The LLM's `relation` judgment only
+rank when sharpened. `active` and `updated` are both **live** resting states:
+either can be retrieved into a reply and either is a valid dedup/conflict
+neighbour for the next message (`LIVE_STATUSES` in `models.py` is the single gate).
+The split exists so the inspector can show *what was refined* as a first-class
+state, not just a transient event. A **superseded** memory moves to the
+`superseded` status: it drops out of retrieval but stays in the inspector, faded,
+with a forward link to the fact that replaced it. So the four states are
+`active`/`updated` (live) and `superseded`/`forgotten` (resting, inspectable but
+not retrieved). The LLM's `relation` judgment only
 picks refine-vs-contradict; the in-place mutation, the new-row linkage, the
 confidence formula (`c + CONFIDENCE_STEP·(1−c)`), and the revision writes are all
 deterministic code in `memory.py`/`store.py`.
@@ -205,6 +210,14 @@ needs no decoration.
   A flaky model degrades memory quality for one turn instead of breaking the
   request. These are mechanics (retry/timeout/fallback), so they live in code,
   not in a prompt.
+- **Concurrency: one connection, two lock tiers.** `db.py` holds a single shared
+  SQLite connection. `_lock` serializes each write+commit so a write is atomic, but
+  a turn is *read → judge → write*, so two `/chat` requests for the same conversation
+  could still interleave on the same memory. `process_turn` therefore takes a
+  per-conversation `turn_lock` for its whole body: same-conversation turns serialize,
+  different conversations run fully in parallel. It's a distinct lock from `_lock`, so
+  the nested `store.*` writes inside a turn can't deadlock. At production scale this is
+  where you'd move to a connection pool with `BEGIN IMMEDIATE` per turn.
 - **`openai/gpt-oss-20b` for judgment, `openai/gpt-oss-120b` for replies**:
   per-turn extraction and conflict judgment run on the cheap, fast model with
   `reasoning_effort: low` and a schema-constrained response; replies get the

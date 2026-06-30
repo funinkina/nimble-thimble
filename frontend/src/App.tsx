@@ -15,7 +15,7 @@ function toThreadMessage(m: RestoredMessage): ThreadMessageLike {
     const meta: TurnMeta = {
       message_id: m.turn_message_id,
       retrieved: m.retrieved,
-      memory_events: [],
+      memory_events: m.memory_events ?? [],
     };
     return {
       role: "assistant",

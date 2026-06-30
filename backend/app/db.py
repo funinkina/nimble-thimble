@@ -15,7 +15,25 @@ import sqlite_vec
 from . import config
 
 _conn: sqlite3.Connection | None = None
-_lock = threading.Lock()
+_lock = threading.Lock()  # serializes write+commit on the shared connection
+
+# Per-conversation pipeline locks. `_lock` only makes each write atomic; it does
+# NOT stop two concurrent /chat turns for the same conversation from interleaving
+# read -> judge -> write on the same memory. process_turn holds the conversation's
+# turn_lock for its whole body so same-conversation turns serialize while different
+# conversations still run in parallel. Distinct from _lock, so nesting can't deadlock.
+_turn_locks: dict[str, threading.Lock] = {}
+_turn_locks_guard = threading.Lock()
+
+
+def turn_lock(key: str) -> threading.Lock:
+    with _turn_locks_guard:
+        lk = _turn_locks.get(key)
+        if lk is None:
+            lk = threading.Lock()
+            _turn_locks[key] = lk
+        return lk
+
 
 DEFAULT_CONVERSATION_ID = "default"
 

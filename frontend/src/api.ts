@@ -36,6 +36,21 @@ export function postChat(
   });
 }
 
+// Streaming sibling of postChat: returns the raw SSE Response so the caller can
+// read the body as a token stream. Keeps BASE encapsulated in this module.
+export function postChatStream(
+  message: string,
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  return fetch(BASE + "/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, conversation_id: conversationId }),
+    signal,
+  });
+}
+
 export function getMemories(
   conversationId: string,
   status?: MemoryStatus,

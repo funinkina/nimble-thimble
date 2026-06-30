@@ -207,14 +207,14 @@ export function ChatPane() {
             components={{ UserMessage, AssistantMessage }}
           />
         </ThreadPrimitive.Viewport>
-        <ComposerPrimitive.Root className="flex-none flex items-end gap-4 border-t border-border bg-surface px-6 py-4">
+        <ComposerPrimitive.Root className="flex-none flex items-stretch gap-4 border-t border-border bg-surface pl-6">
           <ComposerPrimitive.Input
-            className="flex-1 resize-none border-none bg-transparent font-sans text-body leading-normal text-primary outline-none max-h-40 min-h-6 placeholder:text-faint"
+            className="flex-1 resize-none border-none bg-transparent py-4 font-sans text-body leading-normal text-primary outline-none max-h-40 min-h-6 placeholder:text-faint"
             placeholder="Send a message..."
             autoFocus
             rows={1}
           />
-          <ComposerPrimitive.Send className="flex-none inline-flex items-center gap-1.5 rounded-md bg-ink px-4 py-2 font-mono text-label uppercase text-surface transition-opacity duration-150 ease-nothing hover:opacity-80 disabled:cursor-default disabled:bg-raised disabled:text-faint [&_svg]:size-[13px]">
+          <ComposerPrimitive.Send className="flex-none inline-flex items-center gap-1.5 rounded-none bg-ink px-6 font-mono text-label uppercase text-surface transition-opacity duration-150 ease-nothing hover:opacity-80 disabled:cursor-default disabled:bg-raised disabled:text-faint [&_svg]:size-[13px]">
             SEND
             <ArrowUp strokeWidth={1.5} />
           </ComposerPrimitive.Send>

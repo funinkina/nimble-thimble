@@ -104,9 +104,10 @@ to Nothing tokens, which live in `theme.css`.
   LLM-output Pydantic model passes through it. For the same reason,
   `Extraction.forget_request` is `str = ""`, not `Optional[str]` — avoid
   `anyOf:[..., null]` in LLM-facing schemas.
-- **Embeddings are local** (`fastembed`, bge-small, 384-d) — there is no embedding
-  API key; only `GROQ_API_KEY` is required. First `/chat` downloads the model
-  (~130 MB) once.
+- **Embeddings are local** (`fastembed`, bge-base-en-v1.5, 768-d) — there is no
+  embedding API key; only `GROQ_API_KEY` is required. `EMBED_MODEL`/`EMBED_DIM` live
+  in `config.py`; the dim is baked into the vec0 vtable, so changing the model means
+  running `scripts/reembed.py`. First `/chat` downloads the model (~0.21 GB) once.
 - **Decay** (`decay.py`) is computed at read time and never stored; memories below
   the floor fade in ranking but are never deleted (still shown in the inspector).
 - Route handlers are **sync `def`** on purpose — FastAPI runs them in a threadpool

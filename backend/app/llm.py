@@ -10,7 +10,7 @@ so the decision is a typed object, not free text. Every call returns
 from __future__ import annotations
 
 import time
-from typing import Any, Type
+from typing import Any, Iterator, Type
 
 from groq import Groq
 from pydantic import BaseModel
@@ -168,8 +168,13 @@ For each candidate: write `text` as a standalone third-person statement ("The us
 is vegetarian."), pick the most specific `scope`, quote the exact `source_excerpt`
 from the message that evidences it, and set `confidence` between 0 and 1.
 
-If the user explicitly asks to forget or delete something they told you, set
-`forget_request` to the subject (e.g. "diet", "my job"); otherwise an empty string.
+Detecting forget requests is REQUIRED. If the user asks you to forget, delete,
+drop, remove, or stop remembering something, set `forget_request` to the subject
+phrase (and do NOT also store it as a candidate). Examples:
+- "forget everything about my diet" -> forget_request: "diet"
+- "please delete what I told you about my job" -> forget_request: "my job"
+- "stop remembering my address" -> forget_request: "address"
+Otherwise set `forget_request` to an empty string.
 
 Return an empty candidate list for pure chit-chat."""
 
@@ -217,23 +222,34 @@ def judge_conflict(candidate_text: str, neighbour_text: str) -> tuple[Judgment, 
     return parsed or Judgment(relation=Relation.new, reason="judge unavailable"), meta
 
 
-def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str, dict]:
+REPLY_FALLBACK = "Sorry — I had trouble generating a reply just now. Try again?"
+
+
+def _reply_prompt(user_msg: str, history: list[dict], memories: list[dict]) -> str:
     mem_block = (
         "\n".join(f"- ({m['scope']}) {m['text']}" for m in memories)
         or "(none retrieved)"
     )
-    prompt = (
+    return (
         f"Conversation so far:\n{_format_history(history)}\n\n"
         f"MEMORIES about the user:\n{mem_block}\n\nUser message:\n{user_msg}"
     )
+
+
+def _reply_messages(prompt: str) -> list[dict]:
+    return [
+        {"role": "system", "content": REPLY_SYSTEM},
+        {"role": "user", "content": prompt},
+    ]
+
+
+def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str, dict]:
+    prompt = _reply_prompt(user_msg, history, memories)
     started = time.perf_counter()
     try:
         completion = client().chat.completions.create(
             model=config.REPLY_MODEL,
-            messages=[
-                {"role": "system", "content": REPLY_SYSTEM},
-                {"role": "user", "content": prompt},
-            ],
+            messages=_reply_messages(prompt),
             max_completion_tokens=1024,
         )
         return (completion.choices[0].message.content or ""), _meta(
@@ -242,4 +258,52 @@ def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str
     except Exception as e:  # noqa: BLE001 - degrade to a graceful message, never 500
         meta = _meta(config.REPLY_MODEL, None, started)
         meta["error"] = f"{type(e).__name__}: {e}"
-        return ("Sorry — I had trouble generating a reply just now. Try again?", meta)
+        return (REPLY_FALLBACK, meta)
+
+
+def reply_stream(
+    user_msg: str, history: list[dict], memories: list[dict]
+) -> Iterator[tuple[str, Any]]:
+    """Stream the reply token-by-token. Yields ("delta", text) per chunk, then a
+    final ("done", (full_text, meta)). Degrades like reply(): on any error it yields
+    no deltas and a single ("done", (fallback, meta-with-error)) so the turn never
+    500s. full_text from the "done" event is always authoritative."""
+    prompt = _reply_prompt(user_msg, history, memories)
+    started = time.perf_counter()
+    parts: list[str] = []
+    usage = None
+    try:
+        # Groq's streamed chunks already carry usage on the final chunk (chunk.usage);
+        # stream_options isn't accepted by this SDK version, so don't pass it.
+        stream = client().chat.completions.create(
+            model=config.REPLY_MODEL,
+            messages=_reply_messages(prompt),
+            max_completion_tokens=1024,
+            stream=True,
+        )
+        for chunk in stream:
+            if getattr(chunk, "usage", None):
+                usage = chunk.usage
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = getattr(choices[0].delta, "content", None)
+            if delta:
+                parts.append(delta)
+                yield ("delta", delta)
+        meta = {
+            "model": config.REPLY_MODEL,
+            "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+            "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+        }
+        yield ("done", ("".join(parts), meta))
+    except Exception as e:  # noqa: BLE001 - degrade to a graceful message, never 500
+        meta = {
+            "model": config.REPLY_MODEL,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+            "error": f"{type(e).__name__}: {e}",
+        }
+        yield ("done", (REPLY_FALLBACK, meta))

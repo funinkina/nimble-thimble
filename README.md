@@ -85,7 +85,7 @@ Scenarios:
 
 1. **Creation** — a fact is extracted with evidence, scope, reason, one `created` revision.
 2. **Supersede / conflict** — "vegetarian → eats fish" *invalidates-not-deletes*: the old row is parked at `superseded` and a new `active` row takes over, linked both ways (`supersedes_id` / `superseded_by`); the conflict trace records the `superseded` action.
-3. **Update / refine** — "I have a dog → a golden retriever named Max" folds into the **same** row (same id, stays `active`, `refined` revision); no second memory.
+3. **Update / refine** — "I have a dog → a golden retriever named Max" folds into the **same** row (same id, flips to the `updated` state — still live and retrievable — with a `refined` revision); no second memory.
 4. **Retrieval** — a dinner question pulls the diet memory with cosine + decay + score + rank, and the reply trace lists the used ids.
 5. **Forget / delete** — "forget my diet" → forgotten, gone from retrieval, still shown in the inspector.
 6. **No duplication** — restating a known fact spawns no second memory; if the dedup stage runs on a ≥ threshold match it does so deterministically (no LLM judge call).

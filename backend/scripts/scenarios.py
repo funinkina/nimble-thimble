@@ -196,12 +196,22 @@ def main():
         dog_id = dog["id"]
         active_before = len(memories(status="active"))
         chat("My dog is a golden retriever named Max.")
-        still = next((m for m in memories(status="active") if m["id"] == dog_id), None)
-        check("refined memory keeps its id and stays active", still is not None)
+        # A refine folds in place and flips the row to status='updated' (still live +
+        # retrievable). It must keep its id and must NOT spawn a second row.
+        still = next((m for m in memories() if m["id"] == dog_id), None)
         check(
-            "refine did not spawn a second active row",
-            len(memories(status="active")) <= active_before,
-            f"{active_before} -> {len(memories(status='active'))}",
+            "refined memory keeps its id and stays live (active/updated)",
+            still is not None and still["status"] in ("active", "updated"),
+            f"status={still['status'] if still else None}",
+        )
+        check(
+            "refine flipped the row to the 'updated' state (inspector shows it)",
+            still is not None and still["status"] == "updated",
+            f"status={still['status'] if still else None}",
+        )
+        check(
+            "refine did not spawn a second row",
+            len([m for m in memories() if m["id"] == dog_id]) == 1,
         )
         kinds = [rv["change_type"] for rv in revisions(dog_id)]
         folded = still is not None and "retriever" in (still["text"].lower() if still else "")
@@ -209,6 +219,13 @@ def main():
             "refinement folded in (a 'refined' revision or the text was updated)",
             "refined" in kinds or folded,
             f"revisions={kinds}",
+        )
+        # F1 guard: the 'updated' status must be retrievable, not a dead bucket.
+        r_ret = chat("Tell me about my dog.")
+        check(
+            "an 'updated'-status memory is still retrievable in a later turn",
+            any(x["memory_id"] == dog_id for x in r_ret["retrieved"]),
+            f"retrieved={[x['memory_id'][:8] for x in r_ret['retrieved']]}",
         )
 
     print("\n=== Scenario 3: RETRIEVAL ===")
