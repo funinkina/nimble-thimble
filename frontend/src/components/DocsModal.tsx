@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Github, X } from "lucide-react";
+import { Github, Globe, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import designMd from "../../../DESIGN.md?raw";
@@ -9,6 +9,7 @@ export type DocView = "design" | "readme" | "about" | null;
 
 const REPO = "https://github.com/funinkina/nimble-thimble";
 const PROFILE = "https://github.com/funinkina";
+const SITE = "https://funinkina.co.in";
 
 const TITLES: Record<NonNullable<DocView>, string> = {
   design: "DESIGN.md",
@@ -45,13 +46,22 @@ function About() {
           Author of nimble-thimble
         </span>
       </div>
-      {/* TODO(Aryan): edit this bio to taste */}
       <p className="text-body leading-[1.6] text-primary">
-        I build inspectable AI systems — tools where you can see exactly what the
-        model did and why. nimble-thimble is a chat assistant with a long-term
-        memory you can watch form, update, and supersede in real time.
+        I'm a recent graduate, with ~2 years of experience engineering backend & systems at production level, working in Go, Python, and C/C++. I like building systems that are fast, boring to operate, and interesting to build, and most of my time goes writing code and shipping straight to production.
+        <br />
+        Lately that means real-time LLM infrastructure and voice agent backends, though I'm just as comfortable low in the stack with device drivers and Linux kernel work, including a patch merged into mainline. Along the way: an 80% cut in voice latency, a 5x inference speedup, and 60% in cost savings.
+        <br />
+        When I'm not shipping, I write about Linux, open source, and computer science for 1000+ readers a month.
       </p>
       <div className="flex flex-col gap-2">
+        <a
+          href={SITE}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 font-mono text-label uppercase text-interactive hover:underline [&_svg]:size-[15px]"
+        >
+          <Globe strokeWidth={1.5} /> funinkina.co.in
+        </a>
         <a
           href={PROFILE}
           target="_blank"
