@@ -327,7 +327,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
           <div className="flex flex-col gap-0.5">
             <span className="font-mono text-label uppercase text-faint">Confidence</span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-1 w-12 overflow-hidden rounded-full bg-raised">
+              <span className="h-1 w-20 overflow-hidden rounded-full bg-raised">
                 <span
                   className="block h-full bg-muted"
                   style={{ width: `${Math.round(mem.confidence * 100)}%` }}
@@ -339,23 +339,24 @@ export function MemoryCard({ mem }: { mem: Memory }) {
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
+            <span className="font-mono text-label uppercase text-faint">Decay</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1 w-20 overflow-hidden rounded-full bg-raised">
+                <span
+                  className={`block h-full transition-[width] duration-[250ms] ease-nothing ${decayFill(decay)}`}
+                  style={{ width: `${Math.round(decay * 100)}%` }}
+                />
+              </span>
+              <span className="font-mono text-body-sm tracking-[0.04em] text-primary">
+                {decay.toFixed(3)}
+              </span>
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
             <span className="font-mono text-label uppercase text-faint">Used</span>
             <span className="font-mono text-body-sm tracking-[0.04em] text-primary">
               {mem.use_count}&times;
             </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-[5px]">
-          <div className="flex items-baseline justify-between">
-            <span className={LABEL}>Decay</span>
-            <span className="font-mono text-label text-muted">{decay.toFixed(3)}</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-raised">
-            <div
-              className={`h-full rounded-full transition-[width] duration-[250ms] ease-nothing ${decayFill(decay)}`}
-              style={{ width: `${Math.round(decay * 100)}%` }}
-            />
           </div>
         </div>
       </div>
