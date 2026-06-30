@@ -1,4 +1,4 @@
-# Inspectable Memory Chat
+# GlassBox - Transparent AI Memory
 
 A chat assistant that remembers. As you talk to it normally, it extracts durable
 facts about you, dedupes and reconciles them against what it already knows
@@ -22,27 +22,25 @@ hidden in a log.
 
 The design rationale, state machine, and trade-offs are in [DESIGN.md](DESIGN.md).
 
-## What it does
-
-- **Extracts** memory-worthy facts from natural conversation (ignores chit-chat).
-- **Dedupes** near-identical facts instead of piling up copies.
-- **Updates / supersedes** when you refine or contradict something you said before — the old memory is kept, marked, and linked to its successor.
-- **Forgets** on request, and via the inspector's forget/delete actions.
-- **Retrieves** the relevant memories into each reply, ranked by semantic similarity × a recency/usage **decay** score. An optional hybrid path (BM25 + cross-encoder rerank) is one env flag away — see [Retrieval quality](#retrieval-quality-measured).
-- **Explains itself**: each reply links to the exact pipeline trace — what was extracted, what was deduped (and whether deterministically or by the LLM), what conflicted (and why), what was retrieved (with similarity, decay, rank, and every fusion/rerank sub-score), and which memories fed the reply. The chat badge opens a provenance popover of those memories; each assistant turn shows chips for what it created/updated/superseded/forgot.
-- **Degrades instead of crashing**: every LLM call has a timeout and bounded retry; Groq's strict-schema failures (~10% under load) fall back to a safe empty result so a turn never 500s, and the failure is recorded in the trace.
-
-## Stack
-
-| Layer      | Choice                                                                  | Why                                                                         |
-| ---------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Backend    | FastAPI (Python)                                                        | async API, Pydantic doubles as the LLM structured-output contract           |
-| Store      | SQLite + `sqlite-vec`                                                   | one file, zero infra — vectors + relational + trace data together           |
-| Embeddings | `fastembed` (BAAI/bge-base-en-v1.5, 768-d)                              | local, free, no second API key                                              |
-| LLM        | Groq — `openai/gpt-oss-120b` (replies), `openai/gpt-oss-20b` (judgment) | Chat Completions `json_schema` structured output makes judgment inspectable |
-| Frontend   | React + Vite + TS + assistant-ui                                        | streaming chat primitives; Nothing-design light theme                       |
 
 ## Setup
+
+### Quick start (one command)
+
+Installs deps, then runs backend + frontend. Prompts for your Groq key if `backend/.env` doesn't have one and injects it for that run only. Ctrl-C stops both. Uses `uv` if you have it, otherwise builds a project-local `backend/.venv` with your own Python (3.12 or 3.13).
+
+```bash
+./run.sh                         # macOS / Linux
+```
+
+```powershell
+.\run.ps1                        # Windows (PowerShell 5+)
+# if blocked: powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+
+Needs Node ≥18 ([nodejs.org](https://nodejs.org)) and either `uv` or a system Python 3.12/3.13 already installed — the script installs neither. Add `--setup` / `-Setup` to install deps without starting the servers. Manual steps below.
+
+### Manual
 
 Prerequisites: Python ≥3.12 (`uv` recommended), Node ≥18, and a Groq API key ([get one here](https://console.groq.com/keys)).
 
@@ -91,6 +89,26 @@ Scenarios:
 6. **No duplication** — restating a known fact spawns no second memory; if the dedup stage runs on a ≥ threshold match it does so deterministically (no LLM judge call).
 7. **Forget precision** — an unrelated forget subject ("forget my favourite Pokemon") forgets nothing.
 8. **Manual edit + dedup guard** — `PATCH /memories/{id}` rewrites text (re-embeds) and appends an `edited` revision; editing one memory to duplicate another is rejected with `409`.
+
+## What it does
+
+- **Extracts** memory-worthy facts from natural conversation (ignores chit-chat).
+- **Dedupes** near-identical facts instead of piling up copies.
+- **Updates / supersedes** when you refine or contradict something you said before — the old memory is kept, marked, and linked to its successor.
+- **Forgets** on request, and via the inspector's forget/delete actions.
+- **Retrieves** the relevant memories into each reply, ranked by semantic similarity × a recency/usage **decay** score. An optional hybrid path (BM25 + cross-encoder rerank) is one env flag away — see [Retrieval quality](#retrieval-quality-measured).
+- **Explains itself**: each reply links to the exact pipeline trace — what was extracted, what was deduped (and whether deterministically or by the LLM), what conflicted (and why), what was retrieved (with similarity, decay, rank, and every fusion/rerank sub-score), and which memories fed the reply. The chat badge opens a provenance popover of those memories; each assistant turn shows chips for what it created/updated/superseded/forgot.
+- **Degrades instead of crashing**: every LLM call has a timeout and bounded retry; Groq's strict-schema failures (~10% under load) fall back to a safe empty result so a turn never 500s, and the failure is recorded in the trace.
+
+## Stack
+
+| Layer      | Choice                                                                  | Why                                                                         |
+| ---------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Backend    | FastAPI (Python)                                                        | async API, Pydantic doubles as the LLM structured-output contract           |
+| Store      | SQLite + `sqlite-vec`                                                   | one file, zero infra — vectors + relational + trace data together           |
+| Embeddings | `fastembed` (BAAI/bge-base-en-v1.5, 768-d)                              | local, free, no second API key                                              |
+| LLM        | Groq — `openai/gpt-oss-120b` (replies), `openai/gpt-oss-20b` (judgment) | Chat Completions `json_schema` structured output makes judgment inspectable |
+| Frontend   | React + Vite + TS + assistant-ui                                        | streaming chat primitives                                                   |
 
 ### Retrieval quality (measured)
 

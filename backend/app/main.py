@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Inspectable Memory Chat", lifespan=lifespan)
+app = FastAPI(title="GlassBox Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
