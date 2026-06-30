@@ -19,7 +19,7 @@ async function refresh() {
 const ICON_BTN =
   "inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border bg-surface transition-colors duration-150 ease-nothing [&_svg]:size-[15px]";
 const ICON_BTN_IDLE = "border-line text-muted hover:border-ink hover:text-ink";
-const ICON_BTN_ACTIVE = "bg-ink border-ink text-surface";
+const ICON_BTN_ACTIVE = "bg-surface border-ink text-ink font-bold";
 
 export function ConversationSidebar({
   collapsed,
@@ -53,7 +53,7 @@ export function ConversationSidebar({
 
   // Refresh titles/order after every turn (the first user message names the chat).
   useEffect(() => {
-    refresh().catch(() => {});
+    refresh().catch(() => { });
   }, [turnSeq]);
 
   async function newChat() {
@@ -140,11 +140,10 @@ export function ConversationSidebar({
           conversations.map((c) => (
             <div
               key={c.id}
-              className={`group flex items-center gap-2 rounded-lg border px-4 py-2 cursor-pointer transition-colors duration-150 ease-nothing ${
-                selected === c.id
+              className={`group flex items-center gap-2 rounded-lg border px-4 py-2 cursor-pointer transition-colors duration-150 ease-nothing ${selected === c.id
                   ? "bg-surface border-line"
                   : "border-transparent hover:bg-raised"
-              }`}
+                }`}
               onClick={() => store.selectConversation(c.id)}
             >
               <span className="flex-1 min-w-0 truncate font-sans text-body-sm text-primary">

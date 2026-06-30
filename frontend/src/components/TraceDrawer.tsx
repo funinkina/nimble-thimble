@@ -1,11 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  ArrowDownToLine,
-  GitMerge,
-  MessageSquare,
-  Search,
-  Sparkles,
-} from "lucide-react";
+import { GitMerge, MessageSquare, Search, Sparkles } from "lucide-react";
 import { getTraces } from "../api";
 import { useSelectedMessageId, useTurnSeq } from "../store";
 import type {
@@ -247,8 +241,8 @@ function StageBlock({ stage, trace }: { stage: TraceStage; trace?: Trace }) {
 
   if (!trace) {
     return (
-      <div className="rounded-lg border border-border bg-surface overflow-hidden animate-fade">
-        <div className="flex items-center gap-2 border-b border-border bg-raised px-4 py-2">
+      <div className="border-b border-border animate-fade">
+        <div className="flex items-center gap-2 bg-raised px-6 py-3">
           <span className="font-mono text-label text-faint">
             {STAGE_ORDER.indexOf(stage) + 1}
           </span>
@@ -284,8 +278,8 @@ function StageBlock({ stage, trace }: { stage: TraceStage; trace?: Trace }) {
   }
 
   return (
-    <div className="rounded-lg border border-line bg-surface overflow-hidden animate-fade">
-      <div className="flex items-center gap-2 border-b border-border bg-raised px-4 py-2">
+    <div className="border-b border-border animate-fade">
+      <div className="flex items-center gap-2 border-b border-border bg-raised px-6 py-3">
         <span className="font-mono text-label text-faint">
           {STAGE_ORDER.indexOf(stage) + 1}
         </span>
@@ -293,9 +287,8 @@ function StageBlock({ stage, trace }: { stage: TraceStage; trace?: Trace }) {
           <Icon strokeWidth={1.5} />
           {stage}
         </span>
-        <ArrowDownToLine strokeWidth={1.5} className="ml-auto size-3 text-faint" />
       </div>
-      <div className="flex flex-col gap-4 p-4">{body}</div>
+      <div className="flex flex-col gap-4 px-6 py-4 bg-surface">{body}</div>
     </div>
   );
 }
@@ -326,29 +319,31 @@ export function TraceDrawer() {
   for (const t of traces) byStage.set(t.stage, t);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col gap-4 p-6">
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="font-sans text-body font-bold tracking-[-0.01em] text-ink">
+    <div className="flex-1 min-h-0 flex flex-col">
+      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border">
+        <span className="font-sans font-bold text-subheading text-ink tracking-[-0.01em]">
           Pipeline Trace
         </span>
         <span className="font-mono text-label uppercase text-faint">
           {selected ? shortId(selected) : "NO TURN"}
         </span>
-      </div>
+      </header>
 
-      {!selected ? (
-        <div className="my-4 font-mono text-body-sm tracking-[0.06em] text-faint">
-          [NO TURN SELECTED] — send a message or click a [MEMORIES USED] badge.
-        </div>
-      ) : loading && traces.length === 0 ? (
-        <div className="my-4 font-mono text-body-sm tracking-[0.06em] text-faint">
-          [LOADING TRACE...]
-        </div>
-      ) : (
-        STAGE_ORDER.map((stage) => (
-          <StageBlock key={stage} stage={stage} trace={byStage.get(stage)} />
-        ))
-      )}
+      <div className="flex-1 min-h-0 overflow-y-auto scroll-slim">
+        {!selected ? (
+          <div className="px-6 py-4 font-mono text-body-sm tracking-[0.06em] text-faint">
+            [NO TURN SELECTED] — send a message or click a [MEMORIES USED] badge.
+          </div>
+        ) : loading && traces.length === 0 ? (
+          <div className="px-6 py-4 font-mono text-body-sm tracking-[0.06em] text-faint">
+            [LOADING TRACE...]
+          </div>
+        ) : (
+          STAGE_ORDER.map((stage) => (
+            <StageBlock key={stage} stage={stage} trace={byStage.get(stage)} />
+          ))
+        )}
+      </div>
     </div>
   );
 }
