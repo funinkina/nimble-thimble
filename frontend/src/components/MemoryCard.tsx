@@ -37,6 +37,8 @@ const CHANGE_TAG: Record<string, string> = {
 };
 const ACT = "inline-flex items-center gap-[5px] font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing disabled:cursor-default disabled:text-faint [&_svg]:size-[13px]";
 const ACT_STATUS_TONE = { busy: "text-faint", ok: "text-success", err: "text-accent" };
+// Full-width, equal-thirds action buttons. border-r divides them; last has none.
+const BTN = "flex items-center justify-center gap-1.5 py-3 font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing border-r border-border last:border-r-0 hover:bg-raised hover:text-primary disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent disabled:hover:text-faint [&_svg]:size-[13px]";
 
 function decayFill(d: number): string {
   if (d > 0.6) return "bg-success";
@@ -134,39 +136,43 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   return (
     <article
       ref={ref}
-      className={`flex flex-col gap-4 rounded-lg border bg-surface p-4 animate-fade transition-[box-shadow,border-color] duration-300 ease-nothing ${flashing ? "border-accent ring-2 ring-accent" : "border-border"
+      className={`flex flex-col border-b border-border bg-surface animate-fade transition-colors duration-300 ease-nothing ${flashing ? "bg-raised ring-2 ring-inset ring-accent" : ""
         }`}
     >
-      <div className="flex items-start justify-between gap-4">
-        {editing ? (
-          <textarea
-            className="w-full resize-y rounded-md border border-line bg-raised p-2 font-sans text-body leading-[1.45] text-ink outline-none min-h-[60px] focus:border-muted"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveEdit();
-              if (e.key === "Escape") {
-                setEditing(false);
-                setDraft(mem.text);
-              }
-            }}
-          />
-        ) : (
-          <div className="font-sans text-body font-medium leading-[1.45] text-ink">
-            {mem.text}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`${TAG} border-line text-muted`}>
-          {mem.scope.replace("_", " ")}
-        </span>
-        <span className={`${TAG} ${STATUS_TAG[mem.status] ?? "border-line text-muted"}`}>
-          {mem.status}
-        </span>
-      </div>
+      <div className="flex flex-col gap-4 px-6 py-4">
+        <div className="flex items-start justify-between gap-4">
+          {editing ? (
+            <textarea
+              className="w-full resize-y rounded-md border border-line bg-raised p-2 font-sans text-body leading-[1.45] text-ink outline-none min-h-[60px] focus:border-muted"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveEdit();
+                if (e.key === "Escape") {
+                  setEditing(false);
+                  setDraft(mem.text);
+                }
+              }}
+            />
+          ) : (
+            <>
+              <div className="flex-1 font-sans text-body font-medium leading-[1.45] text-ink">
+                {mem.text}
+              </div>
+              <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+                <span className={`${TAG} border-line text-muted`}>
+                  {mem.scope.replace("_", " ")}
+                </span>
+                <span
+                  className={`${TAG} ${STATUS_TAG[mem.status] ?? "border-line text-muted"}`}
+                >
+                  {mem.status}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
 
       {mem.source_excerpt && (
         <div className="flex flex-col gap-[3px]">
@@ -274,17 +280,27 @@ export function MemoryCard({ mem }: { mem: Memory }) {
             style={{ width: `${Math.round(decay * 100)}%` }}
           />
         </div>
+        </div>
       </div>
 
-      <div className="flex items-center gap-4 border-t border-border pt-2">
+      {action.kind !== "idle" && (
+        <div
+          className={`flex justify-end px-6 py-1.5 font-mono text-label uppercase animate-fade ${ACT_STATUS_TONE[action.kind]}`}
+        >
+          [{action.label}
+          {action.kind === "busy" ? "..." : ""}]
+        </div>
+      )}
+
+      <div className="grid grid-flow-col auto-cols-fr border-t border-border">
         {editing ? (
           <>
-            <button className={`${ACT} hover:text-primary`} onClick={saveEdit} disabled={busy}>
+            <button className={BTN} onClick={saveEdit} disabled={busy}>
               <Check strokeWidth={1.5} />
               SAVE
             </button>
             <button
-              className={`${ACT} hover:text-primary`}
+              className={BTN}
               onClick={() => {
                 setEditing(false);
                 setDraft(mem.text);
@@ -298,7 +314,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         ) : (
           <>
             <button
-              className={`${ACT} hover:text-primary`}
+              className={BTN}
               onClick={() => setEditing(true)}
               disabled={busy}
             >
@@ -306,24 +322,20 @@ export function MemoryCard({ mem }: { mem: Memory }) {
               EDIT
             </button>
             {mem.status !== "forgotten" && (
-              <button className={`${ACT} hover:text-primary`} onClick={forget} disabled={busy}>
+              <button className={BTN} onClick={forget} disabled={busy}>
                 <EyeOff strokeWidth={1.5} />
                 FORGET
               </button>
             )}
-            <button className={`${ACT} hover:text-accent`} onClick={remove} disabled={busy}>
+            <button
+              className={`${BTN} hover:text-accent`}
+              onClick={remove}
+              disabled={busy}
+            >
               <Trash2 strokeWidth={1.5} />
               DELETE
             </button>
           </>
-        )}
-        {action.kind !== "idle" && (
-          <span
-            className={`ml-auto font-mono text-label uppercase animate-fade ${ACT_STATUS_TONE[action.kind]}`}
-          >
-            [{action.label}
-            {action.kind === "busy" ? "..." : ""}]
-          </span>
         )}
       </div>
     </article>

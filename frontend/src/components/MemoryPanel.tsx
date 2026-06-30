@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { getMemories } from "../api";
 import {
   useHighlightedMemoryId,
@@ -25,11 +26,10 @@ const SCOPE_FILTERS: { key: Scope | "all"; label: string }[] = [
   { key: "context", label: "CONTEXT" },
 ];
 
-const CHIP =
-  "rounded-full border px-2 py-1 font-mono text-label uppercase transition-colors duration-150 ease-nothing";
-const CHIP_IDLE = "border-line bg-surface text-muted hover:border-muted hover:text-primary";
-const CHIP_ACTIVE = "border-ink bg-ink text-surface";
-const FILTER_LABEL = "mr-1 font-mono text-label uppercase text-muted";
+const SELECT =
+  "w-full appearance-none cursor-pointer bg-surface px-4 py-3 pr-9 font-mono text-label uppercase text-muted outline-none transition-colors duration-150 ease-nothing hover:text-primary focus:text-ink [&>option]:bg-surface [&>option]:text-ink";
+const FILTER_NAME =
+  "flex items-center border-r border-border px-6 py-3 font-mono text-label uppercase text-ink";
 const EMPTY = "font-mono text-body-sm tracking-[0.06em] text-faint";
 
 export function MemoryPanel() {
@@ -43,13 +43,17 @@ export function MemoryPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // If a clicked trace id points at a card a filter is hiding, drop the filters
-  // so it renders (and the card's own effect can scroll/flash it into view).
+  // When a trace id is *clicked* (nonce bumps), if the target card is hidden by a
+  // filter, drop the filters so it renders. Gated on the nonce so it fires only on
+  // the click itself — never when the user later narrows a filter to empty results.
+  const lastHighlight = useRef(highlightNonce);
   useEffect(() => {
+    if (highlightNonce === lastHighlight.current) return;
+    lastHighlight.current = highlightNonce;
     if (!highlightedId || memories.some((m) => m.id === highlightedId)) return;
-    if (status !== "all") setStatus("all");
-    if (scope !== "all") setScope("all");
-  }, [highlightedId, highlightNonce, memories, status, scope]);
+    setStatus("all");
+    setScope("all");
+  }, [highlightNonce, highlightedId, memories]);
 
   useEffect(() => {
     if (!conversationId) {
@@ -90,30 +94,42 @@ export function MemoryPanel() {
         </span>
       </header>
 
-      <div className="flex flex-col gap-2 px-6 py-4 border-b border-border bg-page">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={FILTER_LABEL}>Status</span>
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              className={`${CHIP} ${status === f.key ? CHIP_ACTIVE : CHIP_IDLE}`}
-              onClick={() => setStatus(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
+      <div className="grid grid-cols-[auto_1fr_auto_1fr] border-b border-border">
+        <span className={FILTER_NAME}>Status</span>
+        <div className="relative border-r border-border">
+          <select
+            className={SELECT}
+            value={status}
+            onChange={(e) => setStatus(e.target.value as MemoryStatus | "all")}
+          >
+            {STATUS_FILTERS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            strokeWidth={1.5}
+            className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-faint"
+          />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={FILTER_LABEL}>Scope</span>
-          {SCOPE_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              className={`${CHIP} ${scope === f.key ? CHIP_ACTIVE : CHIP_IDLE}`}
-              onClick={() => setScope(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
+        <span className={FILTER_NAME}>Scope</span>
+        <div className="relative">
+          <select
+            className={SELECT}
+            value={scope}
+            onChange={(e) => setScope(e.target.value as Scope | "all")}
+          >
+            {SCOPE_FILTERS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            strokeWidth={1.5}
+            className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-faint"
+          />
         </div>
       </div>
 
@@ -128,10 +144,14 @@ export function MemoryPanel() {
           </div>
         ) : memories.length === 0 ? (
           <div className="p-6">
-            <div className={EMPTY}>[NO MEMORIES] — start chatting to build some.</div>
+            <div className={EMPTY}>
+              {status !== "all" || scope !== "all"
+                ? "[NO MATCHES] — no memory matches this filter."
+                : "[NO MEMORIES] — start chatting to build some."}
+            </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 p-6">
+          <div className="flex flex-col gap-4">
             {memories.map((m) => (
               <MemoryCard key={m.id} mem={m} />
             ))}
