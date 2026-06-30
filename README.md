@@ -90,6 +90,74 @@ Scenarios:
 7. **Forget precision** — an unrelated forget subject ("forget my favourite Pokemon") forgets nothing.
 8. **Manual edit + dedup guard** — `PATCH /memories/{id}` rewrites text (re-embeds) and appends an `edited` revision; editing one memory to duplicate another is rejected with `409`.
 
+### Sample Scenario Run:
+```bash
+$ uv run python scripts/scenarios.py
+
+=== Scenario 1: CREATION ===
+  [PASS] a memory was created — events=['created']
+  [PASS] active 'vegetarian' memory exists
+  [PASS] memory has source evidence — "I'm a vegetarian"
+  [PASS] memory has a stored reason — 'New fact, no similar memory.'
+  [PASS] memory has a scope — preference
+  [PASS] fresh memory has a single 'created' revision
+  [PASS] extract trace recorded
+
+=== Scenario 2: SUPERSEDE / CONFLICT (invalidate-not-delete) ===
+  [PASS] a supersede/update event fired — events=['superseded', 'created']
+  [PASS] no active memory still positively claims 'vegetarian' — active=['the user is no longer vegetarian; they eat fish.']
+  [PASS] active memory count did not grow — 1 -> 1
+  [PASS] a refined/superseded revision was appended to the original memory — revisions=['created', 'superseded']
+  [PASS] revision records the prior 'vegetarian' text — 'The user is a vegetarian.'
+  [PASS] revision records old + new confidence — 0.95 -> 0.95
+  [PASS] superseded event points at the original (now-invalidated) memory — event_id=5d70d6ca296f4391bac5282ae3c42a11 veg_id=5d70d6ca296f4391bac5282ae3c42a11
+  [PASS] original memory is now status=superseded
+  [PASS] superseded row links forward via superseded_by — '00cfb9eaf1cb4db9b835373e64b59540'
+  [PASS] the successor is active and supersedes the original — successor=00cfb9eaf1cb4db9b835373e64b59540
+  [PASS] conflict trace records a 'superseded' action — ['superseded']
+  [PASS] conflict trace recorded
+
+=== Scenario 2b: UPDATE / REFINE (in-place fold, no tombstone) ===
+  [PASS] a 'dog' memory exists
+  [PASS] refined memory keeps its id and stays live (active/updated) — status=updated
+  [PASS] refine flipped the row to the 'updated' state (inspector shows it) — status=updated
+  [PASS] refine did not spawn a second row
+  [PASS] refinement folded in (a 'refined' revision or the text was updated) — revisions=['created', 'refined']
+  [PASS] an 'updated'-status memory is still retrievable in a later turn — retrieved=['d50a94ab', '00cfb9ea', 'cd645aa0']
+
+=== Scenario 3: RETRIEVAL ===
+  [PASS] at least one memory was retrieved — retrieved=[0.01, 0.01, 0.01]
+  [PASS] retrieval ref carries cosine+decay+score+rank
+  [PASS] retrieve trace recorded with rows
+  [PASS] reply trace lists used memory ids
+
+=== Scenario 4: FORGET / DELETE ===
+  [PASS] a forgotten event fired — events=['forgotten']
+  [PASS] a memory is now forgotten — 0 -> 1
+  [PASS] forgotten memory still visible in inspector
+  [PASS] forgotten memory no longer retrieved — leaked=[]
+
+=== Scenario 5: NO DUPLICATION when a known fact is restated ===
+  [PASS] restating a known fact added no new active memory — 1 -> 1
+  [PASS] extractor suppressed the restated fact (no dedup needed) — events=[]
+
+=== Scenario 6: FORGET PRECISION (loose subject must NOT forget) ===
+  [PASS] no forgotten event fired for an unrelated subject — events=[]
+  [PASS] no existing memory was wrongly forgotten — missing=set()
+
+=== Scenario 7: MANUAL EDIT via PATCH (inspector action) ===
+  [PASS] PATCH returned the new text
+  [PASS] an 'edited' revision was appended — revisions=['created', 'edited']
+
+=== METRICS ===
+  total_user_messages=11, total_candidates=7, dedup_count=2, supersede_count=1, update_count=1, forgotten_count=1, avg_retrieval_cosine=0.5151, llm_calls=27, llm_input_tokens=8380, llm_output_tokens=1737, avg_llm_latency_ms=496.5
+  [PASS] metrics counted LLM calls
+
+========================================
+ALL SCENARIOS PASSED
+========================================
+```
+
 ## What it does
 
 - **Extracts** memory-worthy facts from natural conversation (ignores chit-chat).
