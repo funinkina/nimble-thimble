@@ -80,9 +80,21 @@ export function ConversationSidebar({
             <PanelLeftOpen strokeWidth={1.5} />
           </button>
         </header>
-        <button className="conv-icon-btn rail-new" onClick={newChat} title="New chat">
-          <Plus strokeWidth={1.5} />
-        </button>
+        <div className="pane-body conv-rail">
+          {conversations.map((c, i) => (
+            <button
+              key={c.id}
+              className={`conv-icon-btn conv-rail-item${selected === c.id ? " active" : ""}`}
+              onClick={() => store.selectConversation(c.id)}
+              title={c.title || "New chat"}
+            >
+              {i + 1}
+            </button>
+          ))}
+          <button className="conv-icon-btn" onClick={newChat} title="New chat">
+            <Plus strokeWidth={1.5} />
+          </button>
+        </div>
       </section>
     );
   }

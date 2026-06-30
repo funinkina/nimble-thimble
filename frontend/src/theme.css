@@ -168,8 +168,25 @@ textarea {
   justify-content: center;
   padding: var(--sp-3) 0;
 }
-.conv-sidebar.collapsed .rail-new {
-  margin: var(--sp-2) auto 0;
+.conv-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+}
+.conv-rail-item {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body-sm);
+  color: var(--text-secondary);
+}
+.conv-icon-btn.active {
+  background: var(--text-display);
+  border-color: var(--text-display);
+  color: var(--surface);
+}
+.conv-icon-btn.active:hover {
+  color: var(--surface);
 }
 
 .conv-list {
