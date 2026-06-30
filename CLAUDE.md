@@ -19,7 +19,7 @@ lack 3.14 wheels — `uv sync` handles this):
 ```bash
 cd backend
 uv sync
-uv run uvicorn app.main:app --port 8000 --reload        # serve (needs GEMINI_API_KEY in backend/.env)
+uv run uvicorn app.main:app --port 8000 --reload        # serve (needs GROQ_API_KEY in backend/.env)
 uv run python -m py_compile app/**/*.py                  # quick compile check
 ```
 
@@ -66,8 +66,9 @@ counter bookkeeping. If you add a metric, derive it from trace payloads, not a n
 column.
 
 **Two swap boundaries are deliberately thin:**
-- *LLM provider* = `llm.py` + `config.py` only. Currently Google Gemini via the
-  **Interactions API** (`client.interactions.create`). Provider-agnostic layers
+- *LLM provider* = `llm.py` + `config.py` only. Currently Groq via the
+  **OpenAI-compatible Chat Completions API** (`client.chat.completions.create`).
+  Provider-agnostic layers
   (store, pipeline, routes, the HTTP/Pydantic API contract, the entire frontend)
   never import the SDK.
 - *Persistence / vector store* = `store.py` only. It owns all SQL and all
@@ -96,13 +97,15 @@ to Nothing tokens, which live in `theme.css`.
   similarity = `1 - distance` (see `store.knn`). KNN queries need `embedding MATCH
   ? AND k = ?`. The vec index can't filter on `memories.status`, so retrieval
   **over-fetches** (`VEC_OVERFETCH`) then filters status in Python.
-- **Gemini structured output**: `llm._gemini_schema` deterministically inlines
-  Pydantic `$ref`/`$defs` and whitelists keys, because Gemini's `response_format`
-  rejects `$ref` and numeric bounds. Any new LLM-output Pydantic model passes
-  through it. For the same reason, `Extraction.forget_request` is `str = ""`, not
-  `Optional[str]` — avoid `anyOf:[..., null]` in LLM-facing schemas.
+- **Groq structured output**: `llm._groq_schema` deterministically inlines
+  Pydantic `$ref`/`$defs`, whitelists keys, and recomputes `required` from the full
+  property set (+ `additionalProperties:false`), because Groq strict `json_schema`
+  rejects `$ref`/numeric bounds and demands every field be required. Any new
+  LLM-output Pydantic model passes through it. For the same reason,
+  `Extraction.forget_request` is `str = ""`, not `Optional[str]` — avoid
+  `anyOf:[..., null]` in LLM-facing schemas.
 - **Embeddings are local** (`fastembed`, bge-small, 384-d) — there is no embedding
-  API key; only `GEMINI_API_KEY` is required. First `/chat` downloads the model
+  API key; only `GROQ_API_KEY` is required. First `/chat` downloads the model
   (~130 MB) once.
 - **Decay** (`decay.py`) is computed at read time and never stored; memories below
   the floor fade in ranking but are never deleted (still shown in the inspector).

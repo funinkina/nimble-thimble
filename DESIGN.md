@@ -15,18 +15,21 @@ get unreliable and un-debuggable.
 So the LLM owns exactly two decisions — **extraction** (`llm.extract`) and the
 **relation judgment** between a new fact and its nearest existing memory
 (`llm.judge_conflict`) — plus the user-facing reply. Everything else is plain
-Python. Both judgment calls use **structured output** on the Gemini Interactions
-API: a JSON schema derived from the Pydantic model constrains the response, which
-is then validated straight back into that model. A decision is a typed object you
-can store, render, and assert on — never free text you have to re-parse. This is
+Python. Both judgment calls use **structured output** on the Groq Chat
+Completions API: a JSON schema derived from the Pydantic model constrains the
+response (`response_format` type `json_schema`, `strict: true`), which is then
+validated straight back into that model. A decision is a typed object you can
+store, render, and assert on — never free text you have to re-parse. This is
 what makes the system both trustworthy and debuggable: when a memory was
 superseded, there is a typed `Judgment{relation, reason}` on record explaining why.
 
-(One wrinkle the code handles: Gemini's `response_format` wants a self-contained
-schema, but Pydantic's `model_json_schema()` emits `$ref`/`$defs` for nested models
-and enums plus numeric bounds Gemini rejects. `llm._gemini_schema` deterministically
-inlines the refs and whitelists the supported keys — schema-shaping is mechanics,
-not judgment, so it lives in plain code.)
+(One wrinkle the code handles: Groq strict `json_schema` wants a self-contained
+schema with every field required and `additionalProperties: false`, but Pydantic's
+`model_json_schema()` emits `$ref`/`$defs` for nested models, omits defaulted fields
+from `required`, and adds numeric bounds Groq rejects. `llm._groq_schema`
+deterministically inlines the refs, whitelists the supported keys, and recomputes
+`required` from the full property set — schema-shaping is mechanics, not judgment,
+so it lives in plain code.)
 
 ## The pipeline (one pass per user turn)
 
@@ -156,11 +159,11 @@ needs no decoration.
   every judgment on record. The deterministic gates (`DEDUP_THRESHOLD`,
   `CONFLICT_LOW`) ensure the LLM is only consulted when similarity is genuinely
   ambiguous — clear-cut new facts and clear-cut duplicates are handled in code.
-- **`gemini-3.1-flash-lite` for judgment, `gemini-3.5-flash` for replies**:
+- **`openai/gpt-oss-20b` for judgment, `openai/gpt-oss-120b` for replies**:
   per-turn extraction and conflict judgment run on the cheap, fast model with
-  `thinking_level: low` and a schema-constrained response; replies get the stronger
-  model. Both ids are one line in `config.py` (swap in `gemini-3.1-pro-preview` for
-  replies if you want maximum reasoning). Embeddings stay local — switching the LLM
-  provider touched only `llm.py` + `config.py`, nothing in the pipeline, store, or
-  API contract.
+  `reasoning_effort: low` and a schema-constrained response; replies get the
+  larger model. Both are Groq's strict-`json_schema` models. Both ids are one line
+  in `config.py` (swap in `openai/gpt-oss-120b` for judgment too if you want
+  maximum reasoning). Embeddings stay local — switching the LLM provider touched
+  only `llm.py` + `config.py`, nothing in the pipeline, store, or API contract.
 ```

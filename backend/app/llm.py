@@ -1,4 +1,4 @@
-"""Google AI Studio (Gemini) via the Interactions API (google-genai SDK).
+"""Groq via the OpenAI-compatible Chat Completions API (groq SDK).
 
 The LLM owns exactly two judgments — what to remember (extract) and how a new
 fact relates to an old one (judge_conflict) — plus the user-facing reply. Both
@@ -12,16 +12,17 @@ from __future__ import annotations
 import time
 from typing import Any, Type
 
-from google import genai
+from groq import Groq
 from pydantic import BaseModel
 
 from . import config
 from .models import Extraction, Judgment
 
-_client: genai.Client | None = None
+_client: Groq | None = None
 
-# Keys Gemini's structured-output schema accepts; everything else (title, default,
-# numeric bounds, $defs) is stripped.
+# Keys Groq's json_schema structured output accepts; everything else (title,
+# default, numeric bounds, $defs) is stripped. Groq strict mode rejects numeric
+# bounds (minimum/maximum) and $ref, same as OpenAI's constrained decoding.
 _ALLOWED = {
     "type",
     "properties",
@@ -29,19 +30,21 @@ _ALLOWED = {
     "items",
     "enum",
     "description",
-    "nullable",
 }
 
 
-def client() -> genai.Client:
+def client() -> Groq:
     global _client
     if _client is None:
-        _client = genai.Client(api_key=config.GEMINI_API_KEY or None)
+        _client = Groq(api_key=config.GROQ_API_KEY or None)
     return _client
 
 
-# ---- Pydantic -> Gemini-safe JSON schema (inline $refs, whitelist keys) ----
-def _gemini_schema(model: Type[BaseModel]) -> dict:
+# ---- Pydantic -> Groq strict-schema (inline $refs, whitelist keys, all-required) ----
+# Groq strict json_schema requires every property to be in `required` and every
+# object to set additionalProperties:false. Pydantic omits defaulted fields from
+# `required`, so we recompute it from the property set.
+def _groq_schema(model: Type[BaseModel]) -> dict:
     raw = model.model_json_schema()
     defs = raw.get("$defs", {})
 
@@ -60,10 +63,7 @@ def _gemini_schema(model: Type[BaseModel]) -> dict:
             return base
         if "anyOf" in node:  # defensive: Optional[...] -> pick non-null branch
             branches = [b for b in node["anyOf"] if b.get("type") != "null"]
-            base = resolve(branches[0]) if branches else {"type": "string"}
-            if len(branches) < len(node["anyOf"]) and isinstance(base, dict):
-                base = {**base, "nullable": True}
-            return base
+            return resolve(branches[0]) if branches else {"type": "string"}
         out: dict = {}
         for k, v in node.items():
             if k not in _ALLOWED:
@@ -74,6 +74,9 @@ def _gemini_schema(model: Type[BaseModel]) -> dict:
                 out[k] = resolve(v)
             else:
                 out[k] = v
+        if out.get("type") == "object" and "properties" in out:
+            out["required"] = list(out["properties"].keys())
+            out["additionalProperties"] = False
         return out
 
     return resolve(raw)
@@ -88,12 +91,12 @@ def _strip_fences(text: str) -> str:
     return t.strip()
 
 
-def _meta(model_id: str, interaction: Any, started: float) -> dict:
-    u = getattr(interaction, "usage", None)
+def _meta(model_id: str, completion: Any, started: float) -> dict:
+    u = getattr(completion, "usage", None)
     return {
         "model": model_id,
-        "input_tokens": getattr(u, "total_input_tokens", 0) or 0,
-        "output_tokens": getattr(u, "total_output_tokens", 0) or 0,
+        "input_tokens": getattr(u, "prompt_tokens", 0) or 0,
+        "output_tokens": getattr(u, "completion_tokens", 0) or 0,
         "latency_ms": round((time.perf_counter() - started) * 1000, 1),
     }
 
@@ -106,21 +109,26 @@ def _structured(
     max_tokens: int,
 ) -> tuple[BaseModel, dict]:
     started = time.perf_counter()
-    interaction = client().interactions.create(
+    completion = client().chat.completions.create(
         model=model_id,
-        input=prompt,
-        system_instruction=system,
-        store=False,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+        max_completion_tokens=max_tokens,
+        reasoning_effort="low",
         response_format={
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": _gemini_schema(schema_model),
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_model.__name__.lower(),
+                "strict": True,
+                "schema": _groq_schema(schema_model),
+            },
         },
-        generation_config={"max_output_tokens": max_tokens, "thinking_level": "low"},
     )
-    text = _strip_fences(interaction.output_text or "{}")
+    text = _strip_fences(completion.choices[0].message.content or "{}")
     parsed = schema_model.model_validate_json(text)
-    return parsed, _meta(model_id, interaction, started)
+    return parsed, _meta(model_id, completion, started)
 
 
 EXTRACT_SYSTEM = """You extract durable, long-term memories about the USER from a chat message.
@@ -190,13 +198,14 @@ def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str
         f"MEMORIES about the user:\n{mem_block}\n\nUser message:\n{user_msg}"
     )
     started = time.perf_counter()
-    interaction = client().interactions.create(
+    completion = client().chat.completions.create(
         model=config.REPLY_MODEL,
-        input=prompt,
-        system_instruction=REPLY_SYSTEM,
-        store=False,
-        generation_config={"max_output_tokens": 1024},
+        messages=[
+            {"role": "system", "content": REPLY_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        max_completion_tokens=1024,
     )
-    return (interaction.output_text or ""), _meta(
-        config.REPLY_MODEL, interaction, started
+    return (completion.choices[0].message.content or ""), _meta(
+        config.REPLY_MODEL, completion, started
     )

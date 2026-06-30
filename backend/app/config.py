@@ -14,10 +14,11 @@ DB_PATH = os.getenv(
     "DB_PATH", str(Path(__file__).resolve().parent.parent / "memory.db")
 )
 
-# --- models (Google AI Studio / Gemini, via the Interactions API) ---
-REPLY_MODEL = os.getenv("REPLY_MODEL", "gemini-3.5-flash")  # quality-facing replies
+# --- models (Groq, via the OpenAI-compatible Chat Completions API) ---
+# gpt-oss are the models that support strict json_schema structured output on Groq.
+REPLY_MODEL = os.getenv("REPLY_MODEL", "openai/gpt-oss-120b")  # quality-facing replies
 JUDGE_MODEL = os.getenv(
-    "JUDGE_MODEL", "gemini-3.1-flash-lite"
+    "JUDGE_MODEL", "openai/gpt-oss-20b"
 )  # cheap per-turn extraction + conflict
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"  # local (fastembed), no API key
 EMBED_DIM = 384
@@ -40,4 +41,4 @@ DECAY_FLOOR = 0.2  # decay_score never drops below this
 # --- chat context ---
 HISTORY_TURNS = 8  # recent messages fed to extract() + reply()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
