@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { GitMerge, MessageSquare, Search, Sparkles } from "lucide-react";
+import { GitMerge, MessageSquare, Search, Sparkles, Workflow } from "lucide-react";
 import { getTraces } from "../api";
 import { store, useSelectedMessageId, useTurnSeq } from "../store";
 import type {
@@ -323,7 +323,8 @@ export function TraceDrawer() {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border">
-        <span className="font-sans font-bold text-subheading text-ink tracking-[-0.01em]">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
+          <Workflow strokeWidth={2.25} />
           Pipeline Trace
         </span>
         <span className="font-mono text-label uppercase text-faint">

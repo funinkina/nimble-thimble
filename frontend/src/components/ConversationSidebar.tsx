@@ -16,10 +16,18 @@ async function refresh() {
   store.setConversations(await listConversations());
 }
 
-const ICON_BTN =
-  "inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border bg-surface transition-colors duration-150 ease-nothing [&_svg]:size-[15px]";
-const ICON_BTN_IDLE = "border-line text-muted hover:border-ink hover:text-ink";
-const ICON_BTN_ACTIVE = "bg-surface border-ink text-ink font-bold";
+// Shared header height so the sidebar lines up with the Chat/Memory/Inspector
+// headers (px-?+py-4 over an 18px/1.3 title ≈ 57px).
+const HDR = "flex-none flex h-[57px] border-b border-border";
+// Full-height square header button — fills the cell, padding inside, divider on
+// the left (mirrors the status/scope filter cells).
+const HDR_BTN =
+  "flex items-center justify-center px-4 border-l border-border text-muted transition-colors duration-150 ease-nothing hover:bg-raised hover:text-ink [&_svg]:size-[16px]";
+// Full-width, square chat row — shared by collapsed + expanded lists. The 4px
+// left border is the selected indicator (transparent when idle).
+const CELL =
+  "flex w-full items-center gap-2 border-b border-border border-l-4 border-l-transparent px-4 py-3 cursor-pointer text-muted transition-colors duration-150 ease-nothing hover:bg-raised hover:text-ink";
+const CELL_ACTIVE = "bg-surface !border-l-black text-ink";
 
 export function ConversationSidebar({
   collapsed,
@@ -76,20 +84,20 @@ export function ConversationSidebar({
   if (collapsed) {
     return (
       <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
-        <header className="flex-none flex items-center justify-center py-4 border-b border-border">
+        <header className={HDR}>
           <button
-            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
+            className={`${HDR_BTN} w-full border-l-0`}
             onClick={onToggleCollapse}
             title="Expand chats"
           >
             <PanelLeftOpen strokeWidth={1.5} />
           </button>
         </header>
-        <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col items-center gap-2 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col">
           {conversations.map((c, i) => (
             <button
               key={c.id}
-              className={`${ICON_BTN} ${selected === c.id ? ICON_BTN_ACTIVE : ICON_BTN_IDLE} font-mono text-body-sm`}
+              className={`${CELL} justify-center font-mono text-body-sm ${selected === c.id ? `${CELL_ACTIVE} font-bold` : ""}`}
               onClick={() => store.selectConversation(c.id)}
               title={c.title || "New chat"}
             >
@@ -97,7 +105,7 @@ export function ConversationSidebar({
             </button>
           ))}
           <button
-            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
+            className={`${CELL} justify-center [&_svg]:size-[15px]`}
             onClick={newChat}
             title="New chat"
           >
@@ -110,40 +118,33 @@ export function ConversationSidebar({
 
   return (
     <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
-      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border">
-        <span className="font-sans font-bold text-subheading text-ink tracking-[-0.01em]">
+      <header className={`${HDR} items-stretch justify-between`}>
+        <span className="flex items-center px-4 font-sans font-bold text-subheading text-ink tracking-[-0.01em]">
           Chats
         </span>
-        <span className="inline-flex items-center gap-2">
-          <button
-            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
-            onClick={newChat}
-            title="New chat"
-          >
+        <div className="flex items-stretch">
+          <button className={HDR_BTN} onClick={newChat} title="New chat">
             <Plus strokeWidth={1.5} />
           </button>
           <button
-            className={`${ICON_BTN} ${ICON_BTN_IDLE}`}
+            className={HDR_BTN}
             onClick={onToggleCollapse}
             title="Collapse chats"
           >
             <PanelLeftClose strokeWidth={1.5} />
           </button>
-        </span>
+        </div>
       </header>
-      <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col p-2 gap-1">
+      <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col">
         {conversations.length === 0 ? (
-          <div className="font-mono text-body-sm tracking-[0.06em] text-faint">
+          <div className="px-4 py-3 font-mono text-body-sm tracking-[0.06em] text-faint">
             [NO CHATS]
           </div>
         ) : (
           conversations.map((c) => (
             <div
               key={c.id}
-              className={`group flex items-center gap-2 rounded-lg border px-4 py-2 cursor-pointer transition-colors duration-150 ease-nothing ${selected === c.id
-                  ? "bg-surface border-line"
-                  : "border-transparent hover:bg-raised"
-                }`}
+              className={`group ${CELL} ${selected === c.id ? CELL_ACTIVE : ""}`}
               onClick={() => store.selectConversation(c.id)}
             >
               <span className="flex-1 min-w-0 truncate font-sans text-body-sm text-primary">

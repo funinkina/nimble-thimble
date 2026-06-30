@@ -80,7 +80,10 @@ function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="flex flex-col gap-2 border-b border-border bg-surface px-6 py-4 animate-fade text-primary">
       <div className="flex items-center justify-between gap-3">
-        <div className={`${ROLE_LABEL} text-faint`}>ASSISTANT</div>
+        <div className={`${ROLE_LABEL} text-faint`}>
+          <Bot strokeWidth={1.5} />
+          ASSISTANT
+        </div>
         <MemoryBadge />
       </div>
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
@@ -93,7 +96,8 @@ export function ChatPane() {
   return (
     <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
       <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border">
-        <span className="font-sans font-bold text-subheading text-ink tracking-[-0.01em]">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
+          <MessageSquare strokeWidth={2.25} />
           Chat
         </span>
         <span className="font-mono text-label uppercase text-faint">
