@@ -3,7 +3,7 @@
 // the memory + metrics panes subscribe to `turnSeq` to know when to refetch,
 // and `selectedMessageId` drives the trace pane.
 import { useSyncExternalStore } from "react";
-import type { ChatResponse, Conversation } from "./types";
+import type { ChatResponse, Conversation, MemoryEvent } from "./types";
 
 interface State {
   selectedMessageId: string | null;
@@ -17,7 +17,15 @@ interface State {
   // The nonce re-fires the effect when the same id is clicked twice.
   highlightedMemoryId: string | null;
   highlightNonce: number;
+  // Memory ids touched by the latest turn (created/updated/superseded/etc), kept
+  // until the next pushTurn replaces them. Cards in this set float + get marked.
+  touchedIds: Set<string>;
+  // The latest turn's events, for the "what changed this turn" strip. Cleared on
+  // conversation switch.
+  lastEvents: MemoryEvent[];
 }
+
+const EMPTY_TOUCHED: Set<string> = new Set();
 
 let state: State = {
   selectedMessageId: null,
@@ -27,6 +35,8 @@ let state: State = {
   conversations: [],
   highlightedMemoryId: null,
   highlightNonce: 0,
+  touchedIds: EMPTY_TOUCHED,
+  lastEvents: [],
 };
 
 const listeners = new Set<() => void>();
@@ -51,12 +61,18 @@ export const store = {
     return state;
   },
   // Called by the chat adapter once a turn resolves. Selects the new turn for
-  // the trace pane and bumps turnSeq so memory + metrics refetch.
+  // the trace pane and bumps turnSeq so memory + metrics refetch. Also records
+  // the touched ids + events for this turn (replacing the previous turn's).
   pushTurn(res: ChatResponse) {
+    const events = res.memory_events ?? [];
     set({
       lastResponse: res,
       selectedMessageId: res.message_id,
       turnSeq: state.turnSeq + 1,
+      touchedIds: events.length
+        ? new Set(events.map((e) => e.memory_id))
+        : EMPTY_TOUCHED,
+      lastEvents: events,
     });
   },
   selectMessage(messageId: string) {
@@ -85,6 +101,8 @@ export const store = {
       selectedConversationId: id,
       selectedMessageId: null,
       turnSeq: state.turnSeq + 1,
+      touchedIds: EMPTY_TOUCHED,
+      lastEvents: [],
     });
   },
 };
@@ -106,3 +124,5 @@ export const useConversations = () => useStore((s) => s.conversations);
 export const useHighlightedMemoryId = () =>
   useStore((s) => s.highlightedMemoryId);
 export const useHighlightNonce = () => useStore((s) => s.highlightNonce);
+export const useTouchedIds = () => useStore((s) => s.touchedIds);
+export const useLastEvents = () => useStore((s) => s.lastEvents);

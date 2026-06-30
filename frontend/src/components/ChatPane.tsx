@@ -179,12 +179,12 @@ function AssistantMessage() {
 export function ChatPane() {
   return (
     <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
-      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-gray-900">
-        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-surface tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-surface">
+      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-raised">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
           <MessageSquare strokeWidth={2.25} />
           Chat
         </span>
-        <span className="font-mono text-label uppercase text-surface/50">
+        <span className="font-mono text-label uppercase text-faint">
           Inspectable Memory
         </span>
       </header>

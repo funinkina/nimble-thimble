@@ -103,23 +103,14 @@ def main():
     st = traces(r["message_id"])
     check("extract trace recorded", any(t["stage"] == "extract" for t in st))
 
-    print("\n=== Scenario 2: UPDATE / CONFLICT (in-place fold) ===")
+    print("\n=== Scenario 2: SUPERSEDE / CONFLICT (invalidate-not-delete) ===")
     active_before = len(memories(status="active"))
     r = chat("Actually, I'm not vegetarian anymore — I started eating fish.")
-    evt_types = [e["type"] for e in r["memory_events"]]
+    evt = {e["type"]: e for e in r["memory_events"]}
     check(
         "a supersede/update event fired",
-        any(t in evt_types for t in ("superseded", "updated")),
-        f"events={evt_types}",
-    )
-    # The fact is updated IN PLACE: same canonical id, no new row spawned.
-    conflict_evt = next(
-        (e for e in r["memory_events"] if e["type"] in ("superseded", "updated")), None
-    )
-    check(
-        "conflict event reuses the same canonical memory id",
-        conflict_evt is not None and conflict_evt["memory_id"] == veg_id,
-        f"event_id={(conflict_evt or {}).get('memory_id')} veg_id={veg_id}",
+        any(t in evt for t in ("superseded", "updated")),
+        f"events={list(evt)}",
     )
     _neg = ("not", "no longer", "anymore", "stopped", "former", "used to")
     check(
@@ -130,18 +121,20 @@ def main():
         ),
         f"active={active_texts()}",
     )
+    # Active count stays flat: supersede swaps one active for another (old ->
+    # superseded, new active); an in-place update folds. Either way it must not grow.
     check(
-        "active memory count did not grow (folded in place)",
+        "active memory count did not grow",
         len(memories(status="active")) <= active_before,
         f"{active_before} -> {len(memories(status='active'))}",
     )
-    # The timeline carries the change: a refined/superseded revision over the old text.
+    # The original row carries a refined/superseded revision over its old text.
     revs = revisions(veg_id) if veg_id else []
     conflict_rev = next(
         (rv for rv in revs if rv["change_type"] in ("refined", "superseded")), None
     )
     check(
-        "a refined/superseded revision was appended",
+        "a refined/superseded revision was appended to the original memory",
         conflict_rev is not None,
         f"revisions={[rv['change_type'] for rv in revs]}",
     )
@@ -151,19 +144,72 @@ def main():
             "vegetarian" in (conflict_rev["old_text"] or "").lower(),
             repr(conflict_rev["old_text"]),
         )
-        # Supersede resets confidence to the new claim's; whether the number moves
-        # depends on the LLM's confidence, so assert the revision RECORDS both
-        # rather than requiring a delta (which would be flaky on LLM variance).
         check(
             "revision records old + new confidence",
             conflict_rev["old_confidence"] is not None
             and conflict_rev["new_confidence"] is not None,
             f"{conflict_rev['old_confidence']} -> {conflict_rev['new_confidence']}",
         )
+    # When the judge calls it a SUPERSEDE (expected for a contradiction), prove the
+    # invalidate-not-delete machinery: old row parked at 'superseded', a NEW active
+    # row created, the two linked both ways.
+    if "superseded" in evt:
+        check(
+            "superseded event points at the original (now-invalidated) memory",
+            evt["superseded"]["memory_id"] == veg_id,
+            f"event_id={evt['superseded']['memory_id']} veg_id={veg_id}",
+        )
+        old = next(
+            (m for m in memories(status="superseded") if m["id"] == veg_id), None
+        )
+        check("original memory is now status=superseded", old is not None)
+        if old:
+            new_id = old.get("superseded_by")
+            check("superseded row links forward via superseded_by", bool(new_id), repr(new_id))
+            successor = next(
+                (m for m in memories(status="active") if m["id"] == new_id), None
+            )
+            check(
+                "the successor is active and supersedes the original",
+                successor is not None and successor.get("supersedes_id") == veg_id,
+                f"successor={new_id}",
+            )
+        cr = next((t for t in traces(r["message_id"]) if t["stage"] == "conflict"), None)
+        actions = [x.get("action") for x in (cr["payload"]["resolutions"] if cr else [])]
+        check("conflict trace records a 'superseded' action", "superseded" in actions, f"{actions}")
+    else:  # judge chose an in-place refine
+        check(
+            "updated event reuses the original canonical id (in-place fold)",
+            evt["updated"]["memory_id"] == veg_id,
+            f"event_id={evt['updated']['memory_id']} veg_id={veg_id}",
+        )
     check(
         "conflict trace recorded",
         any(t["stage"] == "conflict" for t in traces(r["message_id"])),
     )
+
+    print("\n=== Scenario 2b: UPDATE / REFINE (in-place fold, no tombstone) ===")
+    chat("I have a dog.")
+    dog = next((m for m in memories(status="active") if "dog" in m["text"].lower()), None)
+    check("a 'dog' memory exists", dog is not None)
+    if dog:
+        dog_id = dog["id"]
+        active_before = len(memories(status="active"))
+        chat("My dog is a golden retriever named Max.")
+        still = next((m for m in memories(status="active") if m["id"] == dog_id), None)
+        check("refined memory keeps its id and stays active", still is not None)
+        check(
+            "refine did not spawn a second active row",
+            len(memories(status="active")) <= active_before,
+            f"{active_before} -> {len(memories(status='active'))}",
+        )
+        kinds = [rv["change_type"] for rv in revisions(dog_id)]
+        folded = still is not None and "retriever" in (still["text"].lower() if still else "")
+        check(
+            "refinement folded in (a 'refined' revision or the text was updated)",
+            "refined" in kinds or folded,
+            f"revisions={kinds}",
+        )
 
     print("\n=== Scenario 3: RETRIEVAL ===")
     r = chat("What should I cook for dinner tonight?")
@@ -260,6 +306,19 @@ def main():
         check("PATCH returned the new text", patched.get("text") == new_text)
         kinds = [rv["change_type"] for rv in revisions(target["id"])]
         check("an 'edited' revision was appended", "edited" in kinds, f"revisions={kinds}")
+        # Dedup guard: editing one memory's text to match ANOTHER active memory must
+        # be rejected (409) rather than silently creating a duplicate.
+        actives = memories(status="active")
+        other = next((m for m in actives if m["id"] != target["id"]), None)
+        if other:
+            resp = requests.patch(
+                f"{BASE}/memories/{target['id']}", json={"text": other["text"]}, timeout=30
+            )
+            check(
+                "editing a memory to duplicate another is rejected (409)",
+                resp.status_code == 409,
+                f"status={resp.status_code}",
+            )
     else:
         check("an active memory exists to edit", False)
 

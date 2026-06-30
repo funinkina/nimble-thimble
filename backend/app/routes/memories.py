@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .. import embeddings, store
+from .. import embeddings, memory, store
 from ..models import MemoryOut, MemoryRevisionOut, Status
 
 router = APIRouter()
@@ -47,6 +47,18 @@ def patch_memory(mem_id: str, body: MemoryPatch):
             reason="Manually forgotten in the inspector.",
         )
     if body.text is not None and body.text != row["text"]:
+        dup = memory.duplicate_of(body.text, row["conversation_id"], mem_id)
+        if dup:
+            other = store.get_row(dup[0])
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "duplicate",
+                    "message": f"Edit matches an existing memory (cosine={dup[1]:.2f}).",
+                    "conflict_id": dup[0],
+                    "conflict_text": other["text"] if other else None,
+                },
+            )
         store.update_text(mem_id, body.text, embeddings.embed_one(body.text))
         store.add_revision(
             memory_id=mem_id,

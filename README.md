@@ -38,7 +38,7 @@ The design rationale, state machine, and trade-offs are in [DESIGN.md](DESIGN.md
 | ---------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Backend    | FastAPI (Python)                                                        | async API, Pydantic doubles as the LLM structured-output contract           |
 | Store      | SQLite + `sqlite-vec`                                                   | one file, zero infra — vectors + relational + trace data together           |
-| Embeddings | `fastembed` (BAAI/bge-small-en-v1.5, 384-d)                             | local, free, no second API key                                              |
+| Embeddings | `fastembed` (BAAI/bge-base-en-v1.5, 768-d)                              | local, free, no second API key                                              |
 | LLM        | Groq — `openai/gpt-oss-120b` (replies), `openai/gpt-oss-20b` (judgment) | Chat Completions `json_schema` structured output makes judgment inspectable |
 | Frontend   | React + Vite + TS + assistant-ui                                        | streaming chat primitives; Nothing-design light theme                       |
 
@@ -55,7 +55,7 @@ uv sync                       # creates .venv (pinned <3.14 for fastembed wheels
 uv run uvicorn app.main:app --port 8000 --reload
 ```
 
-First request downloads the embedding model (~130 MB) once. Only `GROQ_API_KEY` is required — embeddings run locally.
+First request downloads the embedding model (~210 MB) once. Only `GROQ_API_KEY` is required — embeddings run locally. If you later change the embedding model, `scripts/reembed.py` re-embeds an existing DB at the new dimension (a fresh DB needs nothing).
 
 ### 2. Frontend
 
@@ -81,15 +81,16 @@ rm -f scenarios.db                                               # ensure clean 
 uv run python scripts/scenarios.py                              # terminal 2 (exits non-zero on failure)
 ```
 
-Seven scenarios:
+Scenarios:
 
 1. **Creation** — a fact is extracted with evidence, scope, reason, one `created` revision.
-2. **Update / conflict** — "vegetarian → eats fish" supersedes the old claim in place (same id), appends a revision over the prior text.
-3. **Retrieval** — a dinner question pulls the diet memory with cosine + decay + score + rank, and the reply trace lists the used ids.
-4. **Forget / delete** — "forget my diet" → forgotten, gone from retrieval, still shown in the inspector.
-5. **No duplication** — restating a known fact spawns no second memory; if the dedup stage runs on a ≥ threshold match it does so deterministically (no LLM judge call).
-6. **Forget precision** — an unrelated forget subject ("forget my favourite Pokemon") forgets nothing.
-7. **Manual edit** — `PATCH /memories/{id}` rewrites text (re-embeds) and appends an `edited` revision.
+2. **Supersede / conflict** — "vegetarian → eats fish" *invalidates-not-deletes*: the old row is parked at `superseded` and a new `active` row takes over, linked both ways (`supersedes_id` / `superseded_by`); the conflict trace records the `superseded` action.
+3. **Update / refine** — "I have a dog → a golden retriever named Max" folds into the **same** row (same id, stays `active`, `refined` revision); no second memory.
+4. **Retrieval** — a dinner question pulls the diet memory with cosine + decay + score + rank, and the reply trace lists the used ids.
+5. **Forget / delete** — "forget my diet" → forgotten, gone from retrieval, still shown in the inspector.
+6. **No duplication** — restating a known fact spawns no second memory; if the dedup stage runs on a ≥ threshold match it does so deterministically (no LLM judge call).
+7. **Forget precision** — an unrelated forget subject ("forget my favourite Pokemon") forgets nothing.
+8. **Manual edit + dedup guard** — `PATCH /memories/{id}` rewrites text (re-embeds) and appends an `edited` revision; editing one memory to duplicate another is rejected with `409`.
 
 ### Retrieval quality (measured)
 
@@ -104,22 +105,25 @@ cd backend && uv run python scripts/eval_retrieval.py
 
 ```
 config            Recall@3     MRR
-vec-only             0.786   0.804
-vec+rerank           0.786   0.804
-hybrid               0.714   0.714
-hybrid+rerank        0.786   0.804
+vec-only             0.786   0.786
+vec+rerank           0.857   0.839
+hybrid               0.714   0.750
+hybrid+rerank        0.857   0.839
 ```
 
 **Verdict, stated honestly:** on this app's data distribution — short, standalone
-profile facts — local dense retrieval (`bge-small`) is already at ceiling. Naïve
-BM25 rank-fusion *regresses* ranking (lexical noise), and the cross-encoder rerank
-only claws it back to dense parity. So the shipped default is **dense-only**:
-simplest, fastest, no extra model download, and provably no worse. The full
-hybrid + rerank pipeline is implemented and one flag away (`USE_BM25=1
-USE_RERANK=1`) for deployments with larger/noisier memory stores, where the
-literature shows it pays off — and the per-row fusion sub-scores it adds to the
-trace are useful for debugging either way. Building it, measuring it, and *not*
-forcing it on for zero measured gain is the point.
+profile facts — naïve BM25 rank-fusion still *regresses* ranking (lexical noise),
+so the `hybrid` row is worse, not better. But with the upgraded embeddings
+(`bge-base`, 768-d) the cross-encoder rerank is no longer a no-op: `vec+rerank`
+now leads `vec-only` (Recall@3 0.786 → 0.857, MRR 0.786 → 0.839). That's one extra
+query of 14 ranked into the top-3 — suggestive on a set this small, not
+conclusive, but the regime flipped from "rerank claws back to parity" (on
+`bge-small`) to "rerank nudges ahead." So the shipped default stays **dense-only**
+(zero extra model download, provably no worse), and `USE_RERANK=1` is now a
+*justified* one-flag upgrade rather than dead weight; `USE_BM25=1` adds the full
+fusion path (and its per-row sub-scores to the trace) for larger/noisier stores.
+Building it, measuring it, and letting the number — not vibes — set the default is
+the point.
 
 ## API
 

@@ -1,14 +1,67 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Brain, ChevronDown } from "lucide-react";
 import { getMemories } from "../api";
 import {
+  store,
   useHighlightedMemoryId,
   useHighlightNonce,
+  useLastEvents,
   useSelectedConversationId,
+  useTouchedIds,
   useTurnSeq,
 } from "../store";
-import type { Memory, MemoryStatus, Scope } from "../types";
+import type { Memory, MemoryEventType, MemoryStatus, Scope } from "../types";
 import { MemoryCard } from "./MemoryCard";
+
+// "What changed this turn" strip: one row per memory_event. Glyph + colored
+// label + truncated detail, clickable to flash the card. Mono labels, thin
+// tick, no filled blocks — colour rides the text/border per Nothing tokens.
+const EVENT_GLYPH: Record<MemoryEventType, string> = {
+  created: "+",
+  updated: "~",
+  superseded: "!",
+  duplicate: "=",
+  forgotten: "x",
+};
+const EVENT_STRIP_TONE: Record<MemoryEventType, string> = {
+  created: "border-l-success text-success",
+  updated: "border-l-warning text-warning",
+  superseded: "border-l-accent text-accent",
+  duplicate: "border-l-line text-muted",
+  forgotten: "border-l-faint text-faint",
+};
+
+function ChangedStrip() {
+  const events = useLastEvents();
+  if (events.length === 0) return null;
+  return (
+    <div className="flex-none flex flex-col border-b border-border bg-surface animate-fade">
+      <span className="px-6 pt-3 pb-1 font-mono text-label uppercase text-faint">
+        Changed this turn ({events.length})
+      </span>
+      <div className="flex flex-col">
+        {events.map((e, i) => (
+          <button
+            key={`${e.memory_id}-${i}`}
+            className={`flex items-baseline gap-2 border-l-2 px-6 py-1.5 text-left transition-colors duration-150 ease-nothing cursor-pointer hover:bg-raised ${EVENT_STRIP_TONE[e.type]}`}
+            title={`Highlight ${e.memory_id.slice(0, 8)} in the inspector`}
+            onClick={() => store.highlightMemory(e.memory_id)}
+          >
+            <span className="w-3 flex-none text-center font-mono text-body-sm">
+              {EVENT_GLYPH[e.type]}
+            </span>
+            <span className="w-[84px] flex-none font-mono text-label uppercase">
+              {e.type}
+            </span>
+            <span className="min-w-0 flex-1 truncate font-sans text-body-sm leading-[1.4] text-muted">
+              {e.detail}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const STATUS_FILTERS: { key: MemoryStatus | "all"; label: string }[] = [
   { key: "all", label: "ALL" },
@@ -37,6 +90,7 @@ export function MemoryPanel() {
   const conversationId = useSelectedConversationId();
   const highlightedId = useHighlightedMemoryId();
   const highlightNonce = useHighlightNonce();
+  const touchedIds = useTouchedIds();
   const [status, setStatus] = useState<MemoryStatus | "all">("all");
   const [scope, setScope] = useState<Scope | "all">("all");
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -83,14 +137,24 @@ export function MemoryPanel() {
     };
   }, [status, scope, turnSeq, conversationId]);
 
+  // Float cards touched this turn to the top; stable within each group so the
+  // server's existing order is otherwise preserved.
+  const ordered = useMemo(() => {
+    if (touchedIds.size === 0) return memories;
+    const hit: Memory[] = [];
+    const rest: Memory[] = [];
+    for (const m of memories) (touchedIds.has(m.id) ? hit : rest).push(m);
+    return hit.length ? [...hit, ...rest] : memories;
+  }, [memories, touchedIds]);
+
   return (
     <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
-      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-gray-900">
-        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-surface tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-surface">
+      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-raised">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
           <Brain strokeWidth={2.25} />
           Memory
         </span>
-        <span className="font-mono text-label uppercase text-surface/50">
+        <span className="font-mono text-label uppercase text-faint">
           {memories.length} SHOWN
         </span>
       </header>
@@ -134,6 +198,8 @@ export function MemoryPanel() {
         </div>
       </div>
 
+      <ChangedStrip />
+
       <div className="flex-1 min-h-0 overflow-y-auto scroll-slim">
         {error ? (
           <div className="p-6">
@@ -153,7 +219,7 @@ export function MemoryPanel() {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {memories.map((m) => (
+            {ordered.map((m) => (
               <MemoryCard key={m.id} mem={m} />
             ))}
           </div>

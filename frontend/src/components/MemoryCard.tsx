@@ -10,8 +10,14 @@ import {
   EyeOff,
 } from "lucide-react";
 import { deleteMemory, getMemoryRevisions, patchMemory } from "../api";
-import { store, useHighlightedMemoryId, useHighlightNonce } from "../store";
-import type { Memory, MemoryRevision } from "../types";
+import {
+  store,
+  useHighlightedMemoryId,
+  useHighlightNonce,
+  useLastEvents,
+  useTouchedIds,
+} from "../store";
+import type { Memory, MemoryEventType, MemoryRevision } from "../types";
 
 type ActionState =
   | { kind: "idle" }
@@ -36,6 +42,22 @@ const CHANGE_TAG: Record<string, string> = {
   forgotten: "border-line text-faint",
 };
 const ACT_STATUS_TONE = { busy: "text-faint", ok: "text-success", err: "text-accent" };
+// Per-event marking for cards touched this turn: a left border + a chip, in the
+// event's color. Matches the inspector/chip palette elsewhere.
+const EVENT_BORDER: Record<MemoryEventType, string> = {
+  created: "border-l-success",
+  updated: "border-l-warning",
+  superseded: "border-l-accent",
+  duplicate: "border-l-line",
+  forgotten: "border-l-faint",
+};
+const EVENT_CHIP: Record<MemoryEventType, string> = {
+  created: "border-success text-success",
+  updated: "border-warning text-warning",
+  superseded: "border-accent text-accent",
+  duplicate: "border-line text-muted",
+  forgotten: "border-line text-faint",
+};
 // Full-width, equal-thirds action buttons. border-r divides them; last has none.
 const BTN = "flex items-center justify-center gap-1.5 py-3 font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing border-r border-border last:border-r-0 hover:bg-raised hover:text-primary disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent disabled:hover:text-faint [&_svg]:size-[13px]";
 
@@ -59,6 +81,19 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   const ref = useRef<HTMLElement>(null);
   const highlightedId = useHighlightedMemoryId();
   const highlightNonce = useHighlightNonce();
+  const touchedIds = useTouchedIds();
+  const lastEvents = useLastEvents();
+  const touched = touchedIds.has(mem.id);
+  // The event that touched this card this turn (latest wins if several share id).
+  let touchedEvent: MemoryEventType | null = null;
+  if (touched) {
+    for (let i = lastEvents.length - 1; i >= 0; i--) {
+      if (lastEvents[i].memory_id === mem.id) {
+        touchedEvent = lastEvents[i].type;
+        break;
+      }
+    }
+  }
 
   useEffect(() => {
     if (highlightedId !== mem.id) return;
@@ -67,6 +102,15 @@ export function MemoryCard({ mem }: { mem: Memory }) {
     const t = window.setTimeout(() => setFlashing(false), 700);
     return () => window.clearTimeout(t);
   }, [highlightedId, highlightNonce, mem.id]);
+
+  // Flash once when this card first becomes touched by a new turn. Keyed on the
+  // identity of touchedIds (a fresh Set per pushTurn), so it re-fires each turn.
+  useEffect(() => {
+    if (!touched) return;
+    setFlashing(true);
+    const t = window.setTimeout(() => setFlashing(false), 700);
+    return () => window.clearTimeout(t);
+  }, [touchedIds, touched]);
 
   useEffect(() => {
     if (!showHistory || revisions) return;
@@ -135,8 +179,8 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   return (
     <article
       ref={ref}
-      className={`flex flex-col border-b border-border bg-surface animate-fade transition-colors duration-300 ease-nothing ${flashing ? "bg-raised ring-2 ring-inset ring-accent" : ""
-        }`}
+      className={`flex flex-col border-b border-border bg-surface animate-fade transition-colors duration-300 ease-nothing ${touchedEvent ? `border-l-2 ${EVENT_BORDER[touchedEvent]}` : ""
+        } ${flashing ? "bg-raised ring-2 ring-inset ring-accent" : ""}`}
     >
       <div className="flex flex-col gap-4 px-6 py-4">
         <div className="flex items-start justify-between gap-4">
@@ -160,6 +204,14 @@ export function MemoryCard({ mem }: { mem: Memory }) {
                 {mem.text}
               </div>
               <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+                {touchedEvent && (
+                  <span
+                    className={`${TAG} ${EVENT_CHIP[touchedEvent]}`}
+                    title="Changed by the latest turn"
+                  >
+                    {touchedEvent}
+                  </span>
+                )}
                 <span className={`${TAG} border-line text-muted`}>
                   {mem.scope.replace("_", " ")}
                 </span>

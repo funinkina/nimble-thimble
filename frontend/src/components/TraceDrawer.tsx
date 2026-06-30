@@ -126,7 +126,17 @@ function Dedup({ p }: { p: DedupPayload }) {
             <span className={`${RELATION} ${relTone("duplicate")}`}>DUPLICATE</span>
             <span className={Q}>cos {d.cosine.toFixed(4)}</span>
           </div>
-          <div className={Q}>vs &ldquo;{d.neighbour}&rdquo;</div>
+          {d.neighbour_id ? (
+            <button
+              className={`${Q} text-left cursor-pointer hover:text-ink hover:underline`}
+              title={`Highlight ${shortId(d.neighbour_id)} in the memory inspector`}
+              onClick={() => store.highlightMemory(d.neighbour_id!)}
+            >
+              vs &ldquo;{d.neighbour}&rdquo; ({shortId(d.neighbour_id)})
+            </button>
+          ) : (
+            <div className={Q}>vs &ldquo;{d.neighbour}&rdquo;</div>
+          )}
           <div className={REASON}>{d.reason}</div>
           <LlmLine llm={d.llm} />
         </div>
@@ -176,6 +186,20 @@ function statusDot(status: string): string {
   }
 }
 
+// text tone to pair with the dot so the status is legible, not just a 6px colour
+function statusText(status: string): string {
+  switch (status) {
+    case "active":
+      return "text-success";
+    case "updated":
+      return "text-warning";
+    case "superseded":
+      return "text-accent";
+    default:
+      return "text-faint";
+  }
+}
+
 function Retrieve({ p }: { p: RetrievePayload }) {
   const cell =
     "grid grid-cols-[22px_1fr_56px_52px_52px] gap-2 items-center px-2 py-1.5";
@@ -209,12 +233,18 @@ function Retrieve({ p }: { p: RetrievePayload }) {
               onClick={() => store.highlightMemory(row.memory_id)}
             >
               <span className="font-mono text-label text-faint">{row.rank}</span>
-              <span className="flex items-start gap-1.5 font-sans text-caption leading-[1.35] text-primary [overflow-wrap:anywhere]">
+              <span className="flex flex-col gap-0.5 min-w-0">
                 <span
-                  className={`mt-[5px] size-1.5 flex-none rounded-full ${statusDot(row.status)}`}
-                  title={row.status}
-                />
-                <span>{row.text}</span>
+                  className={`inline-flex items-center gap-1 font-mono text-label uppercase tracking-[0.06em] ${statusText(row.status)}`}
+                >
+                  <span
+                    className={`size-1.5 flex-none rounded-full ${statusDot(row.status)}`}
+                  />
+                  {row.status}
+                </span>
+                <span className="font-sans text-caption leading-[1.35] text-primary [overflow-wrap:anywhere]">
+                  {row.text}
+                </span>
               </span>
               <span className="text-right font-mono text-caption text-primary">
                 {row.cosine.toFixed(3)}
@@ -352,12 +382,12 @@ export function TraceDrawer() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-gray-900">
-        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-surface tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-surface">
+      <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-raised">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
           <Workflow strokeWidth={2.25} />
           Pipeline Trace
         </span>
-        <span className="font-mono text-label uppercase text-surface/50">
+        <span className="font-mono text-label uppercase text-faint">
           {selected ? shortId(selected) : "NO TURN"}
         </span>
       </header>

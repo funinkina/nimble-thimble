@@ -38,7 +38,7 @@ so it lives in plain code.)
 1. **extract** — `llm.extract(message, history)` returns `Candidate[]` (each with
    text, scope, a quoted `source_excerpt` for evidence, confidence) plus an
    optional `forget_request`. Chit-chat yields an empty list.
-2. **embed** — each candidate is embedded locally (`fastembed`, 384-d, L2-normalized).
+2. **embed** — each candidate is embedded locally (`fastembed`, bge-base, 768-d, L2-normalized).
 3. **dedup** — find the nearest *active* memory. If similarity ≥ `DEDUP_THRESHOLD`
    the candidate is a duplicate **deterministically** — dropped and the existing
    memory reinforced, with **no LLM call** (a near-identical embedding is not an
@@ -65,10 +65,14 @@ tunable, not scattered through the logic.
 
 ## Canonical memories + revision timeline
 
-A memory is **one canonical row with a stable id**. It is never duplicated per
-turn: when a fact is refined or contradicted, the row is updated **in place** and
-the change is appended to a `memory_revisions` timeline. Nothing is silently
-destroyed — the full history stays inspectable.
+A memory has a **stable canonical id** and a `memory_revisions` timeline. A
+**refinement** updates the row in place (same id) and appends a revision. A
+**contradiction** is handled differently — *invalidate-not-delete*: the old row
+is parked at `superseded` (kept, faded, still inspectable) and a **new active
+row** takes over, linked back to it via `supersedes_id`. Nothing is silently
+destroyed; the full lineage stays on screen. (This is the bi-temporal idea behind
+Zep/Graphiti — a superseded fact is *invalidated, not discarded*, so "what did I
+believe, and when" stays answerable.)
 
 ```
                          new candidate
@@ -83,32 +87,35 @@ destroyed — the full history stays inspectable.
                        │           text re-embedded,     (bump usage, nudge
                        │           confidence nudged↑,    confidence, append
                        │           +'refined' rev          'reinforced' rev)
-                       ├ supersede→ fold IN PLACE:
-                       │           text re-embedded,
-                       │           confidence reset to candidate,
-                       │           +'superseded' rev
+                       ├ supersede→ INVALIDATE-NOT-DELETE:
+                       │           old row → SUPERSEDED (kept, faded);
+                       │           NEW active row, linked via supersedes_id;
+                       │           +'superseded' rev (old) +'created' rev (new)
                        └ unrelated→ CREATE active (false match) +'created' rev
 
    explicit "forget X" → nearest active memory with cos ≥ FORGET_THRESHOLD
                          ⇒ FORGOTTEN +'forgotten' rev   (else: forgets nothing)
 ```
 
-The canonical row stays `active` across refinements; its **decay strength carries
-forward** (`use_count`/`last_used_at` are not reset), so a long-reinforced memory
-keeps its rank when refined. The LLM's `relation` judgment (refinement vs
-contradiction) only picks the revision's `change_type` and the confidence rule —
-the in-place mutation, the confidence formula (`c + CONFIDENCE_STEP·(1−c)`), and
-the revision write are all deterministic code in `memory.py`/`store.py`.
+A **refined** memory stays `active` with its **decay strength carried forward**
+(`use_count`/`last_used_at` are not reset), so a long-reinforced fact keeps its
+rank when sharpened. A **superseded** memory moves to the `superseded` status: it
+drops out of retrieval (only `active` rows are retrieved) but stays in the
+inspector, faded, with a forward link to the fact that replaced it. So three
+statuses are live resting states — `active`, `superseded`, `forgotten` — while
+`updated` is a *transition*, surfaced as a per-turn event and a `refined`
+revision rather than a status a row rests in. The LLM's `relation` judgment only
+picks refine-vs-contradict; the in-place mutation, the new-row linkage, the
+confidence formula (`c + CONFIDENCE_STEP·(1−c)`), and the revision writes are all
+deterministic code in `memory.py`/`store.py`.
 
 `memory_revisions` (one row per change: `change_type`, `old_text`/`new_text`,
 `old_confidence`/`new_confidence`, status delta, source, reason, cosine) is the
 lineage. `GET /memories/{id}/revisions` returns the ordered timeline; the inspector
-card renders it under an expandable **HISTORY (N)**. Statuses are now just
-`active` and `forgotten` for new data; `updated`/`superseded` survive only on
-legacy rows (a guarded one-shot backfill seeds every existing memory a `created`
-revision, and legacy `supersedes_id` chains a linkage revision, so no history is
-lost). `confidence` is no longer frozen at insert — it accumulates on the canonical
-row.
+card renders it under an expandable **HISTORY (N)**. A guarded one-shot backfill
+seeds every pre-existing memory a `created` revision (and any legacy
+`supersedes_id` chain a linkage revision), so no history is lost on upgrade.
+`confidence` is no longer frozen at insert — it accumulates on the canonical row.
 
 ## Decay model
 
@@ -175,9 +182,11 @@ needs no decoration.
   index, relational rows, and trace log live together. At production scale you'd
   swap the store and a hosted embedding model — the pipeline boundary
   (`store.py`) is where that change lands.
-- **Local embeddings (bge-small)** trade some retrieval recall versus a hosted
-  model for zero extra keys and offline operation. The retrieval threshold is
-  tuned for this model and lives in `config.py`.
+- **Local embeddings (bge-base, 768-d)** trade some retrieval recall versus a
+  hosted model for zero extra keys and offline operation. Upgraded from bge-small
+  (384-d) because retrieval quality is this corpus's main accuracy lever (see
+  *Memory accuracy* below); the retrieval threshold is tuned per-model and lives
+  in `config.py`. `scripts/reembed.py` migrates an existing DB when model/dim change.
 - **One judge call per candidate at most** keeps cost and latency bounded and
   every judgment on record. The deterministic gates ensure the LLM is consulted
   *only* in the ambiguous band: `cos < CONFLICT_LOW` creates in code, `cos ≥
@@ -203,3 +212,43 @@ needs no decoration.
   in `config.py` (swap in `openai/gpt-oss-120b` for judgment too if you want
   maximum reasoning). Embeddings stay local — switching the LLM provider touched
   only `llm.py` + `config.py`, nothing in the pipeline, store, or API contract.
+
+## Memory accuracy: the levers (measured and deferred)
+
+Accuracy here means two things: **retrieval** (does the right memory reach the
+reply) and **judgment** (extract/dedup/conflict). The pipeline isolates them, so
+each can be improved without touching the other.
+
+**Taken — embedding upgrade (the corpus's main lever).** `scripts/eval_retrieval.py`
+scores a fixed memory set with confusable distractors. The retrieval stack was
+already at its structural ceiling on short profile facts (BM25 fusion *regresses*
+on lexical noise), so the lever that actually moves the number is embedding
+quality. Swapping bge-small (384-d) → **bge-base (768-d)** is a one-line config
+change (same BGE family, symmetric, no query/doc prefixing) plus a `reembed.py`
+migration. A useful side effect showed up in the eval: with the stronger
+embeddings the **cross-encoder rerank stopped being a no-op** — `vec+rerank` now
+leads `vec-only` (Recall@3 0.786 → 0.857, MRR 0.786 → 0.839 on the 14-query set),
+where on bge-small it only clawed back to parity. Small N, so suggestive not
+conclusive, but the regime changed: rerank (`USE_RERANK=1`,
+`Xenova/ms-marco-MiniLM`, or `bge-reranker-v2-m3` for more headroom) is now a
+justified flag, not dead weight. Kept off by default pending a larger eval set.
+
+**Deferred (documented, not built):**
+
+- **Full bi-temporal validity windows.** The supersede refactor does the *invalidate-
+  not-delete* half (old row kept as `superseded`, linked forward). The full
+  bi-temporal model (Zep/Graphiti) adds explicit `valid_from`/`valid_to` per fact
+  and queries "what was true at time T." It's the SOTA for temporal memory —
+  Graphiti scores **63.8% vs Mem0's 49.0% on LongMemEval** ([Zep, arXiv:2501.13956](https://arxiv.org/abs/2501.13956)).
+  Deferred because it wants a graph store; the current relational + revision model
+  already answers "what changed and when" for this scope.
+- **Entity tagging for dedup/forget keying** (`gliner`, lightweight modern NER).
+  Today dedup and forget key on whole-sentence cosine; tagging the *subject* entity
+  would tighten "forget my diet" precision and catch dedups that share a subject but
+  not surface form. ~0.2 GB model, fits the local-first posture.
+- **Per-scope thresholds.** `user_profile` facts could demand a tighter dedup band
+  than transient `context`. One dict in `config.py`; deferred for lack of data to
+  tune it against.
+
+The throughline: every lever is either measured before shipping (`eval_retrieval.py`)
+or left as a typed config knob, never a silent prompt tweak.

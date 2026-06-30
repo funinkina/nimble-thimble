@@ -20,8 +20,12 @@ REPLY_MODEL = os.getenv("REPLY_MODEL", "openai/gpt-oss-120b")  # quality-facing 
 JUDGE_MODEL = os.getenv(
     "JUDGE_MODEL", "openai/gpt-oss-20b"
 )  # cheap per-turn extraction + conflict
-EMBED_MODEL = "BAAI/bge-small-en-v1.5"  # local (fastembed), no API key
-EMBED_DIM = 384
+# bge-base-en-v1.5 (768-d) over bge-small (384-d): same BGE family so it's a drop-in
+# (symmetric, no query/doc prefix needed), ~0.21 GB one-time download, materially
+# stronger retrieval/dedup/conflict matching. Changing this changes EMBED_DIM, which
+# is baked into the vec0 vtable — run scripts/reembed.py to migrate an existing DB.
+EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-base-en-v1.5")  # local (fastembed)
+EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 
 # --- retrieval / dedup / conflict thresholds (cosine similarity, 0..1) ---
 DEDUP_THRESHOLD = 0.88  # >= this -> duplicate without an LLM call (deterministic)

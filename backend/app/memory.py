@@ -33,7 +33,10 @@ def retrieve_memories(
     if use_rerank is None:
         use_rerank = config.USE_RERANK
 
-    q_emb = embeddings.embed_one(user_msg)
+    try:
+        q_emb = embeddings.embed_one(user_msg)
+    except Exception:  # noqa: BLE001 - retrieval is best-effort; the reply still runs
+        return []
     vec_hits = store.knn(q_emb, config.HYBRID_PREFETCH, conversation_id)
     bm_hits = (
         store.bm25(user_msg, config.HYBRID_PREFETCH, conversation_id)
@@ -103,19 +106,38 @@ def _nudge(c: float) -> float:
     return min(1.0, c + config.CONFIDENCE_STEP * (1.0 - c))
 
 
-def _active_neighbour(emb: list[float], conversation_id: str) -> tuple[str, float] | None:
-    """Nearest ACTIVE memory to an embedding, as (id, cosine)."""
+def _active_neighbour(
+    emb: list[float], conversation_id: str, exclude_id: str | None = None
+) -> tuple[str, float] | None:
+    """Nearest ACTIVE memory to an embedding, as (id, cosine). Skips exclude_id."""
     for mem_id, cos in store.knn(emb, config.TOP_K_CANDIDATES, conversation_id):
+        if mem_id == exclude_id:
+            continue
         row = store.get_row(mem_id)
         if row and row["status"] == Status.active.value:
             return mem_id, cos
     return None
 
 
+def duplicate_of(
+    text: str, conversation_id: str, exclude_id: str
+) -> tuple[str, float] | None:
+    """Nearest active memory (other than exclude_id) at/above DEDUP_THRESHOLD, else
+    None. Lets a manual inspector edit refuse to silently re-create a duplicate."""
+    emb = embeddings.embed_one(text)
+    hit = _active_neighbour(emb, conversation_id, exclude_id=exclude_id)
+    if hit and hit[1] >= config.DEDUP_THRESHOLD:
+        return hit
+    return None
+
+
 def _handle_forget(
     subject: str, message_id: str, conversation_id: str
 ) -> MemoryEvent | None:
-    emb = embeddings.embed_one(subject)
+    try:
+        emb = embeddings.embed_one(subject)
+    except Exception:  # noqa: BLE001 - forget is best-effort; never 500 the turn
+        return None
     hit = _active_neighbour(emb, conversation_id)
     if hit and hit[1] >= config.FORGET_THRESHOLD:
         row = store.get_row(hit[0])
@@ -177,7 +199,19 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
     dropped: list[dict] = []
     resolutions: list[dict] = []
     for cand in extraction.candidates:
-        emb = embeddings.embed_one(cand.text)
+        try:
+            emb = embeddings.embed_one(cand.text)
+        except Exception as e:  # noqa: BLE001 - degrade like the LLM calls, never 500
+            dropped.append(
+                {
+                    "candidate": cand.text,
+                    "neighbour": None,
+                    "cosine": None,
+                    "reason": f"Embedding failed, candidate skipped: {e}",
+                    "llm": None,
+                }
+            )
+            continue
         hit = _active_neighbour(emb, conversation_id)
 
         if hit is None or hit[1] < config.CONFLICT_LOW:
@@ -251,6 +285,7 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
                 {
                     "candidate": cand.text,
                     "neighbour": neigh["text"],
+                    "neighbour_id": neigh_id,
                     "cosine": round(cos, 4),
                     "reason": reason,
                     "llm": None,  # deterministic, no judge call
@@ -291,6 +326,7 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
                 {
                     "candidate": cand.text,
                     "neighbour": neigh["text"],
+                    "neighbour_id": neigh_id,
                     "cosine": round(cos, 4),
                     "reason": judgment.reason,
                     "llm": j_meta,
@@ -298,17 +334,11 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
             )
             continue
 
-        if rel in (Relation.update, Relation.supersede):
-            # Fold into the SAME canonical row: mutate in place, append a revision,
-            # carry decay strength forward. No new row, stable id.
-            refine = rel == Relation.update
-            verb = "Refines" if refine else "Contradicts"
-            # refine agrees -> raise confidence; contradiction -> reset to the new claim
-            new_conf = (
-                _nudge(max(neigh["confidence"], cand.confidence))
-                if refine
-                else cand.confidence
-            )
+        if rel == Relation.update:
+            # Refine: same subject, sharper value. Fold into the SAME canonical row
+            # in place, append a revision, carry decay strength forward. Stable id —
+            # a refined fact is still the current fact, so the row stays active.
+            new_conf = _nudge(max(neigh["confidence"], cand.confidence))
             store.revise_memory(
                 neigh_id,
                 text=cand.text,
@@ -319,7 +349,7 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
             )
             store.add_revision(
                 memory_id=neigh_id,
-                change_type="refined" if refine else "superseded",
+                change_type="refined",
                 old_text=neigh["text"],
                 new_text=cand.text,
                 old_confidence=neigh["confidence"],
@@ -328,15 +358,14 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
                 new_status=Status.active.value,
                 source_message_id=message_id,
                 source_excerpt=cand.source_excerpt,
-                reason=f"{verb} earlier memory: {judgment.reason}",
+                reason=f"Refines earlier memory: {judgment.reason}",
                 cosine=round(cos, 4),
             )
-            mem_id = neigh_id  # stable
             events.append(
                 MemoryEvent(
-                    type="updated" if refine else "superseded",
-                    memory_id=mem_id,
-                    detail=f"{verb.lower()} {neigh_id[:8]}: {cand.text}",
+                    type="updated",
+                    memory_id=neigh_id,
+                    detail=f"refines {neigh_id[:8]}: {cand.text}",
                 )
             )
             resolutions.append(
@@ -347,9 +376,77 @@ def process_turn(user_msg: str, conversation_id: str) -> ChatResponse:
                     "neighbour_id": neigh_id,
                     "cosine": round(cos, 4),
                     "reason": judgment.reason,
-                    # keep metrics vocab: updated/superseded counts in metrics.py
-                    "action": "updated" if refine else "superseded",
-                    "memory_id": mem_id,
+                    "action": "updated",
+                    "memory_id": neigh_id,
+                    "llm": j_meta,
+                }
+            )
+            continue
+
+        if rel == Relation.supersede:
+            # Contradiction: the old fact is now false. Invalidate-not-delete — mark
+            # the old row `superseded`, write a NEW active row linked back via
+            # supersedes_id. Both stay inspectable; only the new one is retrievable.
+            # (Bi-temporal model, à la Zep/Graphiti: superseded facts are invalidated,
+            # not discarded, so the inspector can show what changed and when.)
+            store.set_status(neigh_id, Status.superseded)
+            store.add_revision(
+                memory_id=neigh_id,
+                change_type="superseded",
+                old_text=neigh["text"],
+                new_text=cand.text,
+                old_confidence=neigh["confidence"],
+                new_confidence=neigh["confidence"],
+                old_status=neigh["status"],
+                new_status=Status.superseded.value,
+                source_message_id=message_id,
+                source_excerpt=cand.source_excerpt,
+                reason=f"Contradicted by newer fact: {judgment.reason}",
+                cosine=round(cos, 4),
+            )
+            new_id = store.add_memory(
+                text=cand.text,
+                scope=cand.scope,
+                source_message_id=message_id,
+                source_excerpt=cand.source_excerpt,
+                reason=f"Supersedes {neigh_id[:8]}: {judgment.reason}",
+                confidence=cand.confidence,
+                embedding=emb,
+                conversation_id=conversation_id,
+                supersedes_id=neigh_id,
+            )
+            store.add_revision(
+                memory_id=new_id,
+                change_type="created",
+                new_text=cand.text,
+                new_confidence=cand.confidence,
+                new_status=Status.active.value,
+                source_message_id=message_id,
+                source_excerpt=cand.source_excerpt,
+                reason=f"Supersedes earlier memory {neigh_id[:8]}: {judgment.reason}",
+                cosine=round(cos, 4),
+            )
+            events.append(
+                MemoryEvent(
+                    type="superseded",
+                    memory_id=neigh_id,  # point at the now-faded old card
+                    detail=f"superseded by: {cand.text}",
+                )
+            )
+            events.append(
+                MemoryEvent(type="created", memory_id=new_id, detail=cand.text)
+            )
+            resolutions.append(
+                {
+                    "candidate": cand.text,
+                    "relation": rel.value,
+                    "neighbour": neigh["text"],
+                    "neighbour_id": neigh_id,
+                    "cosine": round(cos, 4),
+                    "reason": judgment.reason,
+                    "action": "superseded",
+                    "memory_id": new_id,
+                    "supersedes_id": neigh_id,
                     "llm": j_meta,
                 }
             )

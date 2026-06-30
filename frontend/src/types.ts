@@ -102,6 +102,7 @@ export interface ExtractPayload {
 export interface DedupDropped {
   candidate: string;
   neighbour: string;
+  neighbour_id?: string;
   cosine: number;
   reason: string;
   llm?: LlmMeta;
