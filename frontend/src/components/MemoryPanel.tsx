@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Brain, ChevronDown, Search, X } from "lucide-react";
+import { Brain, ChevronDown, Loader2, Search, X } from "lucide-react";
 import { getMemories, searchMemories } from "../api";
 import {
   store,
@@ -98,7 +98,12 @@ export function MemoryPanel() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const searching = debounced.trim().length > 0;
+  const searching = query.trim().length > 0;
+  // A debounce is pending when the typed query hasn't reached the effect yet; a
+  // search is "busy" while typing OR while its request is in flight. We never show
+  // "no results" until it's fully settled, so partial-word states don't flash empty.
+  const pending = query.trim() !== debounced.trim();
+  const searchBusy = searching && (pending || loading);
 
   // Debounce the search box so each keystroke doesn't fire a request.
   useEffect(() => {
@@ -124,6 +129,10 @@ export function MemoryPanel() {
     let live = true;
     setLoading(true);
     const q = debounced.trim();
+    const started = performance.now();
+    // Keep the search spinner up for at least this long so a fast response can't
+    // flash "no results" before the eye registers it was even searching.
+    const minMs = q ? 300 : 0;
     const load = q
       ? searchMemories(conversationId, q)
       : getMemories(
@@ -141,7 +150,11 @@ export function MemoryPanel() {
         if (!live) return;
         setError(e instanceof Error ? e.message : "failed to load");
       })
-      .finally(() => live && setLoading(false));
+      .finally(() => {
+        if (!live) return;
+        const wait = Math.max(0, minMs - (performance.now() - started));
+        window.setTimeout(() => live && setLoading(false), wait);
+      });
     return () => {
       live = false;
     };
@@ -177,7 +190,12 @@ export function MemoryPanel() {
           placeholder="Search all memories…"
           className="min-w-0 flex-1 bg-transparent font-sans text-body-sm text-ink outline-none placeholder:text-faint"
         />
-        {query && (
+        {searchBusy ? (
+          <Loader2
+            strokeWidth={1.5}
+            className="size-3.5 flex-none animate-spin text-muted"
+          />
+        ) : query ? (
           <button
             onClick={() => setQuery("")}
             title="Clear search"
@@ -185,7 +203,7 @@ export function MemoryPanel() {
           >
             <X strokeWidth={1.5} />
           </button>
-        )}
+        ) : null}
       </div>
 
       <div
@@ -237,6 +255,13 @@ export function MemoryPanel() {
         {error ? (
           <div className="p-6">
             <div className={EMPTY}>[ERROR: {error}]</div>
+          </div>
+        ) : searchBusy && memories.length === 0 ? (
+          <div className="p-6">
+            <div className={`${EMPTY} inline-flex items-center gap-2`}>
+              <Loader2 strokeWidth={1.5} className="size-3.5 animate-spin" />
+              [SEARCHING...]
+            </div>
           </div>
         ) : loading && memories.length === 0 ? (
           <div className="p-6">

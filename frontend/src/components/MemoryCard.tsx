@@ -27,7 +27,7 @@ type ActionState =
   | { kind: "err"; label: string };
 
 const LABEL = "font-mono text-label uppercase text-muted";
-const TAG = "rounded border bg-surface px-2 py-[3px] font-mono text-label uppercase whitespace-nowrap";
+const TAG = "border bg-surface px-2 py-[3px] font-mono text-label uppercase whitespace-nowrap";
 const STATUS_TAG: Record<string, string> = {
   active: "border-success text-success",
   updated: "border-warning text-warning",
@@ -272,24 +272,6 @@ export function MemoryCard({ mem }: { mem: Memory }) {
                 {mem.text}
               </div>
               <div className="flex flex-none flex-wrap items-center justify-end gap-2">
-                <button
-                  onClick={togglePin}
-                  disabled={busy}
-                  title={
-                    mem.pinned
-                      ? "Pinned — protected from decay. Click to unpin."
-                      : "Pin to protect this memory from decay."
-                  }
-                  className={`inline-flex items-center rounded border px-1.5 py-[3px] transition-colors duration-150 ease-nothing disabled:cursor-default [&_svg]:size-3 ${mem.pinned
-                      ? "border-interactive text-interactive"
-                      : "border-line text-faint hover:border-muted hover:text-primary"
-                    }`}
-                >
-                  <Pin
-                    strokeWidth={1.5}
-                    className={mem.pinned ? "fill-current" : ""}
-                  />
-                </button>
                 {touchedEvent && (
                   <span
                     className={`${TAG} ${EVENT_CHIP[touchedEvent]}`}
@@ -306,6 +288,28 @@ export function MemoryCard({ mem }: { mem: Memory }) {
                 >
                   {mem.status}
                 </span>
+                {/* Pin lives on the far right and reads as a BUTTON, not a chip:
+                    filled surface, raised hover, label text, cursor-pointer. */}
+                <button
+                  onClick={togglePin}
+                  disabled={busy}
+                  title={
+                    mem.pinned
+                      ? "Pinned — protected from decay. Click to unpin."
+                      : "Pin to protect this memory from decay."
+                  }
+                  className={`ml-1 inline-flex cursor-pointer items-center gap-1 rounded px-2 py-[3px] font-mono text-label uppercase shadow-sm transition-colors duration-150 ease-nothing disabled:cursor-default disabled:opacity-50 [&_svg]:size-3 ${
+                    mem.pinned
+                      ? "bg-interactive text-surface hover:opacity-85"
+                      : "bg-raised text-muted ring-1 ring-inset ring-line hover:bg-line hover:text-primary"
+                  }`}
+                >
+                  <Pin
+                    strokeWidth={1.5}
+                    className={mem.pinned ? "fill-current" : ""}
+                  />
+                  {mem.pinned ? "Pinned" : "Pin"}
+                </button>
               </div>
             </>
           )}
