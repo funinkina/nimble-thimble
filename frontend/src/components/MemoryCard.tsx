@@ -174,112 +174,112 @@ export function MemoryCard({ mem }: { mem: Memory }) {
           )}
         </div>
 
-      {mem.source_excerpt && (
-        <div className="flex flex-col gap-[3px]">
-          <span className={LABEL}>Evidence</span>
-          <span className="border-l-2 border-line pl-2 font-mono text-caption text-primary">
-            &ldquo;{mem.source_excerpt}&rdquo;
-          </span>
-        </div>
-      )}
+        {mem.source_excerpt && (
+          <div className="flex flex-col gap-[3px]">
+            <span className={LABEL}>Evidence</span>
+            <span className="border-l-2 border-line pl-2 font-mono text-caption text-primary">
+              &ldquo;{mem.source_excerpt}&rdquo;
+            </span>
+          </div>
+        )}
 
-      {mem.reason && (
-        <div className="flex flex-col gap-[3px]">
-          <span className={LABEL}>Why</span>
-          <span className="font-sans text-body-sm leading-[1.45] text-muted">
-            {mem.reason}
-          </span>
-        </div>
-      )}
+        {mem.reason && (
+          <div className="flex flex-col gap-[3px]">
+            <span className={LABEL}>Why</span>
+            <span className="font-sans text-body-sm leading-[1.45] text-muted">
+              {mem.reason}
+            </span>
+          </div>
+        )}
 
-      {mem.revision_count > 1 && (
-        <div className="flex flex-col gap-2">
-          <button
-            className={`${ACT} self-start hover:text-primary`}
-            onClick={() => setShowHistory((s) => !s)}
-          >
-            {showHistory ? (
-              <ChevronDown strokeWidth={1.5} />
-            ) : (
-              <ChevronRight strokeWidth={1.5} />
-            )}
-            <History strokeWidth={1.5} />
-            HISTORY ({mem.revision_count})
-          </button>
-          {showHistory && (
-            <ol className="flex flex-col gap-2 border-l border-line pl-3">
-              {revisions === null ? (
-                <li className="font-mono text-label uppercase text-faint">Loading…</li>
+        {mem.revision_count > 1 && (
+          <div className="flex flex-col gap-2">
+            <button
+              className={`${ACT} self-start hover:text-primary`}
+              onClick={() => setShowHistory((s) => !s)}
+            >
+              {showHistory ? (
+                <ChevronDown strokeWidth={1.5} />
               ) : (
-                [...revisions].reverse().map((rev) => (
-                  <li key={rev.id} className="flex flex-col gap-1 animate-fade">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`${TAG} ${CHANGE_TAG[rev.change_type] ?? "border-line text-muted"}`}
-                      >
-                        {rev.change_type}
-                      </span>
-                      <span className="font-mono text-label text-faint">
-                        {new Date(rev.created_at).toLocaleString()}
-                      </span>
-                    </div>
-                    {rev.old_text && rev.old_text !== rev.new_text && (
-                      <div className="font-sans text-body-sm leading-[1.4] text-faint line-through">
-                        {rev.old_text}
-                      </div>
-                    )}
-                    {rev.new_text && (
-                      <div className="font-sans text-body-sm leading-[1.4] text-muted">
-                        {rev.new_text}
-                      </div>
-                    )}
-                    {rev.old_confidence !== rev.new_confidence && (
-                      <div className="font-mono text-label text-faint">
-                        conf {fmtConf(rev.old_confidence)} → {fmtConf(rev.new_confidence)}
-                      </div>
-                    )}
-                  </li>
-                ))
+                <ChevronRight strokeWidth={1.5} />
               )}
-            </ol>
-          )}
-        </div>
-      )}
+              <History strokeWidth={1.5} />
+              HISTORY ({mem.revision_count})
+            </button>
+            {showHistory && (
+              <ol className="flex flex-col gap-2 border-l border-line pl-3">
+                {revisions === null ? (
+                  <li className="font-mono text-label uppercase text-faint">Loading…</li>
+                ) : (
+                  [...revisions].reverse().map((rev) => (
+                    <li key={rev.id} className="flex flex-col gap-1 animate-fade">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`${TAG} ${CHANGE_TAG[rev.change_type] ?? "border-line text-muted"}`}
+                        >
+                          {rev.change_type}
+                        </span>
+                        <span className="font-mono text-label text-faint">
+                          {new Date(rev.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      {rev.old_text && rev.old_text !== rev.new_text && (
+                        <div className="font-sans text-body-sm leading-[1.4] text-faint line-through">
+                          {rev.old_text}
+                        </div>
+                      )}
+                      {rev.new_text && (
+                        <div className="font-sans text-body-sm leading-[1.4] text-muted">
+                          {rev.new_text}
+                        </div>
+                      )}
+                      {rev.old_confidence !== rev.new_confidence && (
+                        <div className="font-mono text-label text-faint">
+                          conf {fmtConf(rev.old_confidence)} → {fmtConf(rev.new_confidence)}
+                        </div>
+                      )}
+                    </li>
+                  ))
+                )}
+              </ol>
+            )}
+          </div>
+        )}
 
-      <div className="flex flex-wrap items-center gap-6">
-        <div className="flex flex-col gap-0.5">
-          <span className="font-mono text-label uppercase text-faint">Confidence</span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-1 w-12 overflow-hidden rounded-full bg-raised">
-              <span
-                className="block h-full bg-muted"
-                style={{ width: `${Math.round(mem.confidence * 100)}%` }}
-              />
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="flex flex-col gap-0.5">
+            <span className="font-mono text-label uppercase text-faint">Confidence</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1 w-12 overflow-hidden rounded-full bg-raised">
+                <span
+                  className="block h-full bg-muted"
+                  style={{ width: `${Math.round(mem.confidence * 100)}%` }}
+                />
+              </span>
+              <span className="font-mono text-body-sm tracking-[0.04em] text-primary">
+                {mem.confidence.toFixed(2)}
+              </span>
             </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="font-mono text-label uppercase text-faint">Used</span>
             <span className="font-mono text-body-sm tracking-[0.04em] text-primary">
-              {mem.confidence.toFixed(2)}
+              {mem.use_count}&times;
             </span>
-          </span>
+          </div>
         </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="font-mono text-label uppercase text-faint">Used</span>
-          <span className="font-mono text-body-sm tracking-[0.04em] text-primary">
-            {mem.use_count}&times;
-          </span>
-        </div>
-      </div>
 
-      <div className="flex flex-col gap-[5px]">
-        <div className="flex items-baseline justify-between">
-          <span className={LABEL}>Decay</span>
-          <span className="font-mono text-label text-muted">{decay.toFixed(3)}</span>
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-raised">
-          <div
-            className={`h-full rounded-full transition-[width] duration-[250ms] ease-nothing ${decayFill(decay)}`}
-            style={{ width: `${Math.round(decay * 100)}%` }}
-          />
-        </div>
+        <div className="flex flex-col gap-[5px]">
+          <div className="flex items-baseline justify-between">
+            <span className={LABEL}>Decay</span>
+            <span className="font-mono text-label text-muted">{decay.toFixed(3)}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-raised">
+            <div
+              className={`h-full rounded-full transition-[width] duration-[250ms] ease-nothing ${decayFill(decay)}`}
+              style={{ width: `${Math.round(decay * 100)}%` }}
+            />
+          </div>
         </div>
       </div>
 
@@ -314,7 +314,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         ) : (
           <>
             <button
-              className={BTN}
+              className={`${BTN} hover:cursor-pointer`}
               onClick={() => setEditing(true)}
               disabled={busy}
             >
@@ -322,13 +322,13 @@ export function MemoryCard({ mem }: { mem: Memory }) {
               EDIT
             </button>
             {mem.status !== "forgotten" && (
-              <button className={BTN} onClick={forget} disabled={busy}>
+              <button className={`${BTN} hover:cursor-pointer`} onClick={forget} disabled={busy}>
                 <EyeOff strokeWidth={1.5} />
                 FORGET
               </button>
             )}
             <button
-              className={`${BTN} hover:text-accent`}
+              className={`${BTN} hover:text-accent hover:bg-red-400 hover:cursor-pointer`}
               onClick={remove}
               disabled={busy}
             >

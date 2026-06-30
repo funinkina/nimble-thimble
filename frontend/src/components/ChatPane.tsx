@@ -27,7 +27,7 @@ function MarkdownText() {
 
 function UserMessage() {
   return (
-    <MessagePrimitive.Root className="flex flex-col gap-2 animate-fade text-ink">
+    <MessagePrimitive.Root className="flex flex-col gap-2 border-b border-border bg-page px-6 py-4 animate-fade text-ink">
       <div className={`${ROLE_LABEL} text-muted`}>YOU</div>
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
     </MessagePrimitive.Root>
@@ -62,7 +62,7 @@ function MemoryBadge() {
     : `border-line ${n === 0 ? "text-faint" : "text-muted"} hover:border-muted hover:text-primary`;
   return (
     <button
-      className={`self-start mt-1 inline-flex items-center gap-1.5 rounded border bg-surface px-2 py-[3px] font-mono text-label uppercase transition-colors duration-150 ease-nothing [&_svg]:size-3 ${tone}`}
+      className={`inline-flex flex-none items-center gap-1.5 rounded border bg-surface px-2 py-[3px] font-mono text-label cursor-pointer uppercase transition-colors duration-150 ease-nothing [&_svg]:size-3 ${tone}`}
       onClick={() => store.selectMessage(meta.message_id)}
       title="Show this turn's pipeline trace"
     >
@@ -74,11 +74,13 @@ function MemoryBadge() {
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="flex flex-col gap-2 animate-fade text-primary">
-      <div className={`${ROLE_LABEL} text-faint`}>ASSISTANT</div>
+    <MessagePrimitive.Root className="flex flex-col gap-2 border-b border-border bg-surface px-6 py-4 animate-fade text-primary">
+      <div className="flex items-center justify-between gap-3">
+        <div className={`${ROLE_LABEL} text-faint`}>ASSISTANT</div>
+        <MemoryBadge />
+      </div>
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
       <Thinking />
-      <MemoryBadge />
     </MessagePrimitive.Root>
   );
 }
@@ -95,9 +97,9 @@ export function ChatPane() {
         </span>
       </header>
       <ThreadPrimitive.Root className="flex flex-col h-full min-h-0">
-        <ThreadPrimitive.Viewport className="flex-1 min-h-0 overflow-y-auto scroll-slim p-6 flex flex-col gap-6">
+        <ThreadPrimitive.Viewport className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col">
           <ThreadPrimitive.Empty>
-            <div className="m-auto max-w-[320px] text-center text-faint">
+            <div className="m-auto max-w-[320px] p-6 text-center text-faint">
               <div className="mb-2 font-sans text-heading font-bold tracking-[-0.01em] text-muted">
                 Talk to a model that remembers.
               </div>

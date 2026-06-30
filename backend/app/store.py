@@ -37,8 +37,10 @@ def create_conversation(title: str = "") -> dict:
 
 
 def list_conversations() -> list[dict]:
+    # Creation order (oldest first) so a new chat appends at the bottom of the
+    # sidebar and its position number is the next in sequence.
     rows = db.query(
-        "SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC, rowid DESC"
+        "SELECT id, title, created_at, updated_at FROM conversations ORDER BY created_at ASC, rowid ASC"
     )
     return [dict(r) for r in rows]
 
