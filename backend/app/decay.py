@@ -5,6 +5,7 @@ use_count (usage weight climbs toward 1.0) and resets the recency clock. An old,
 unused memory fades toward DECAY_FLOOR but is never deleted — it stays in the
 inspector, just ranked lower.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -33,8 +34,12 @@ def usage_weight(use_count: int) -> float:
     return config.USAGE_BASE + (1.0 - config.USAGE_BASE) * climb
 
 
-def decay_score(last_used_at: str | None, created_at: str, use_count: int,
-                now: datetime | None = None) -> float:
+def decay_score(
+    last_used_at: str | None,
+    created_at: str,
+    use_count: int,
+    now: datetime | None = None,
+) -> float:
     reference = last_used_at or created_at
     score = recency_weight(reference, now) * usage_weight(use_count)
     return max(config.DECAY_FLOOR, round(score, 4))

@@ -1,4 +1,5 @@
 """Pydantic schemas. The LLM-facing ones double as structured-output contracts."""
+
 from __future__ import annotations
 
 from enum import Enum
@@ -9,49 +10,62 @@ from pydantic import BaseModel, Field
 
 # ---- enums ----
 class Scope(str, Enum):
-    user_profile = "user_profile"   # stable identity: name, role, location
-    preference = "preference"       # likes/dislikes, defaults, style
-    fact = "fact"                   # discrete world/personal facts
-    context = "context"             # current task / short-lived situation
+    user_profile = "user_profile"  # stable identity: name, role, location
+    preference = "preference"  # likes/dislikes, defaults, style
+    fact = "fact"  # discrete world/personal facts
+    context = "context"  # current task / short-lived situation
 
 
 class Status(str, Enum):
     active = "active"
-    updated = "updated"             # refined by a newer memory
-    superseded = "superseded"       # contradicted/replaced by a newer memory
-    forgotten = "forgotten"         # explicitly forgotten by the user
+    updated = "updated"  # refined by a newer memory
+    superseded = "superseded"  # contradicted/replaced by a newer memory
+    forgotten = "forgotten"  # explicitly forgotten by the user
 
 
 class Relation(str, Enum):
-    new = "new"                     # unrelated to the neighbour, store fresh
-    duplicate = "duplicate"         # same meaning, drop
-    update = "update"               # same subject, refined value
-    supersede = "supersede"         # contradicts the neighbour, replace it
-    unrelated = "unrelated"         # neighbour was a false match, store fresh
+    new = "new"  # unrelated to the neighbour, store fresh
+    duplicate = "duplicate"  # same meaning, drop
+    update = "update"  # same subject, refined value
+    supersede = "supersede"  # contradicts the neighbour, replace it
+    unrelated = "unrelated"  # neighbour was a false match, store fresh
 
 
 # ---- LLM structured-output contracts ----
 class Candidate(BaseModel):
     """One memory-worthy fact the model lifted from a user message."""
-    text: str = Field(description="The fact, written as a standalone statement about the user.")
+
+    text: str = Field(
+        description="The fact, written as a standalone statement about the user."
+    )
     scope: Scope = Field(description="Which kind of memory this is.")
-    source_excerpt: str = Field(description="The exact span of the user message that evidences this fact.")
-    confidence: float = Field(ge=0.0, le=1.0, description="How confident this is a durable, memory-worthy fact.")
+    source_excerpt: str = Field(
+        description="The exact span of the user message that evidences this fact."
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="How confident this is a durable, memory-worthy fact.",
+    )
 
 
 class Extraction(BaseModel):
     """Result of analysing one user turn. Empty list for chit-chat."""
+
     candidates: list[Candidate] = Field(default_factory=list)
-    forget_request: Optional[str] = Field(
-        default=None,
-        description="If the user explicitly asked to forget/delete something, the subject they want forgotten; else null.",
+    forget_request: str = Field(
+        default="",
+        description="If the user explicitly asked to forget/delete something, the subject to forget; otherwise an empty string.",
     )
 
 
 class Judgment(BaseModel):
     """How a new candidate relates to its nearest existing memory."""
+
     relation: Relation
-    reason: str = Field(description="One sentence explaining the relation, citing both texts.")
+    reason: str = Field(
+        description="One sentence explaining the relation, citing both texts."
+    )
 
 
 # ---- API response shapes ----

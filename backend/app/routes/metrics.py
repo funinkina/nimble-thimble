@@ -8,10 +8,14 @@ router = APIRouter()
 
 @router.get("/metrics", response_model=Metrics)
 def get_metrics():
-    by_status = {r["status"]: r["n"] for r in
-                 db.query("SELECT status, COUNT(*) AS n FROM memories GROUP BY status")}
-    by_scope = {r["scope"]: r["n"] for r in
-                db.query("SELECT scope, COUNT(*) AS n FROM memories GROUP BY scope")}
+    by_status = {
+        r["status"]: r["n"]
+        for r in db.query("SELECT status, COUNT(*) AS n FROM memories GROUP BY status")
+    }
+    by_scope = {
+        r["scope"]: r["n"]
+        for r in db.query("SELECT scope, COUNT(*) AS n FROM memories GROUP BY scope")
+    }
 
     total_candidates = dedup_count = supersede_count = update_count = 0
     cosines: list[float] = []

@@ -3,6 +3,7 @@
 Holds three relational tables (memories, messages, traces) and one vec0 virtual
 table for embeddings. Cosine distance metric so similarity = 1 - distance.
 """
+
 from __future__ import annotations
 
 import sqlite3

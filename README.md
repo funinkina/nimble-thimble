@@ -17,7 +17,7 @@ hidden in a log.
                   retrieved     │  every stage writes a trace row                │
                                 └──────────────────────────────────────────────┘
                                    SQLite + sqlite-vec   |   fastembed (local)
-                                   Claude (Anthropic)
+                                   Gemini (Google AI Studio)
 ```
 
 The design rationale, state machine, and trade-offs are in [DESIGN.md](DESIGN.md).
@@ -33,28 +33,28 @@ The design rationale, state machine, and trade-offs are in [DESIGN.md](DESIGN.md
 
 ## Stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Backend | FastAPI (Python) | async API, Pydantic doubles as the LLM structured-output contract |
-| Store | SQLite + `sqlite-vec` | one file, zero infra — vectors + relational + trace data together |
-| Embeddings | `fastembed` (BAAI/bge-small-en-v1.5, 384-d) | local, free, no second API key |
-| LLM | Claude — `claude-opus-4-8` (replies), `claude-sonnet-4-6` (judgment) | structured outputs make judgment inspectable |
-| Frontend | React + Vite + TS + assistant-ui | streaming chat primitives; Nothing-design light theme |
+| Layer      | Choice                                                               | Why                                                               |
+| ---------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Backend    | FastAPI (Python)                                                     | async API, Pydantic doubles as the LLM structured-output contract |
+| Store      | SQLite + `sqlite-vec`                                                | one file, zero infra — vectors + relational + trace data together |
+| Embeddings | `fastembed` (BAAI/bge-small-en-v1.5, 384-d)                          | local, free, no second API key                                    |
+| LLM        | Gemini (Google AI Studio) — `gemini-3.5-flash` (replies), `gemini-3.1-flash-lite` (judgment) | Interactions API structured output makes judgment inspectable |
+| Frontend   | React + Vite + TS + assistant-ui                                     | streaming chat primitives; Nothing-design light theme             |
 
 ## Setup
 
-Prerequisites: Python ≥3.12 (`uv` recommended), Node ≥18, and an Anthropic API key.
+Prerequisites: Python ≥3.12 (`uv` recommended), Node ≥18, and a Google AI Studio (Gemini) API key ([get one here](https://aistudio.google.com/apikey)).
 
 ### 1. Backend
 
 ```bash
 cd backend
-cp .env.example .env          # then put your real ANTHROPIC_API_KEY in .env
+cp .env.example .env          # then put your real GEMINI_API_KEY in .env
 uv sync                       # creates .venv (pinned <3.14 for fastembed wheels)
 uv run uvicorn app.main:app --port 8000 --reload
 ```
 
-First request downloads the embedding model (~130 MB) once. Only `ANTHROPIC_API_KEY` is required — embeddings run locally.
+First request downloads the embedding model (~130 MB) once. Only `GEMINI_API_KEY` is required — embeddings run locally.
 
 ### 2. Frontend
 
@@ -87,14 +87,14 @@ in the inspector).
 
 ## API
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/chat` | run a turn → reply + memory_events + retrieved refs |
-| GET | `/memories?status=&scope=` | all memories with evidence, scope, reason, supersede links, decay |
-| PATCH | `/memories/{id}` | edit text (re-embeds) or `{forget:true}` |
-| DELETE | `/memories/{id}` | hard delete |
-| GET | `/traces/{message_id}` | ordered pipeline stages for one turn |
-| GET | `/metrics` | counts, dedup/supersede rates, avg retrieval score, token + latency totals |
+| Method | Path                       | Purpose                                                                    |
+| ------ | -------------------------- | -------------------------------------------------------------------------- |
+| POST   | `/chat`                    | run a turn → reply + memory_events + retrieved refs                        |
+| GET    | `/memories?status=&scope=` | all memories with evidence, scope, reason, supersede links, decay          |
+| PATCH  | `/memories/{id}`           | edit text (re-embeds) or `{forget:true}`                                   |
+| DELETE | `/memories/{id}`           | hard delete                                                                |
+| GET    | `/traces/{message_id}`     | ordered pipeline stages for one turn                                       |
+| GET    | `/metrics`                 | counts, dedup/supersede rates, avg retrieval score, token + latency totals |
 
 Interactive docs at `http://localhost:8000/docs`.
 

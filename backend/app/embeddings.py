@@ -1,4 +1,5 @@
 """Local embeddings via fastembed. Vectors are L2-normalized so cosine = dot."""
+
 from __future__ import annotations
 
 import numpy as np
