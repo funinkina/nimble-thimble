@@ -35,7 +35,6 @@ const CHANGE_TAG: Record<string, string> = {
   edited: "border-line text-muted",
   forgotten: "border-line text-faint",
 };
-const ACT = "inline-flex items-center gap-[5px] font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing disabled:cursor-default disabled:text-faint [&_svg]:size-[13px]";
 const ACT_STATUS_TONE = { busy: "text-faint", ok: "text-success", err: "text-accent" };
 // Full-width, equal-thirds action buttons. border-r divides them; last has none.
 const BTN = "flex items-center justify-center gap-1.5 py-3 font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing border-r border-border last:border-r-0 hover:bg-raised hover:text-primary disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent disabled:hover:text-faint [&_svg]:size-[13px]";
@@ -195,7 +194,10 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         {mem.revision_count > 1 && (
           <div className="flex flex-col gap-2">
             <button
-              className={`${ACT} self-start hover:text-primary`}
+              className={`inline-flex items-center cursor-pointer gap-1.5 self-start rounded border px-2.5 py-1 font-mono text-label uppercase transition-colors duration-150 ease-nothing [&_svg]:size-[13px] ${showHistory
+                ? "border-ink bg-raised text-primary"
+                : "border-line bg-raised text-primary hover:border-ink hover:bg-surface hover:text-ink"
+                }`}
               onClick={() => setShowHistory((s) => !s)}
             >
               {showHistory ? (

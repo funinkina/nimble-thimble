@@ -40,9 +40,9 @@ const FOOT_ITEMS: FootItem[] = [
 ];
 
 const FOOT_BTN =
-  "flex w-full items-center gap-2.5 border-b border-white/10 px-4 py-2.5 font-mono text-label uppercase bg-ink text-surface transition-colors duration-150 ease-nothing hover:bg-primary [&_svg]:size-[15px]";
+  "flex w-full items-center gap-2.5 border-b border-white/10 px-4 py-2.5 font-mono text-label uppercase bg-slate-700 text-surface transition-colors duration-150 ease-nothing hover:bg-primary [&_svg]:size-[15px]";
 const FOOT_BTN_COLLAPSED =
-  "flex w-full items-center justify-center border-b border-white/10 py-3 bg-ink text-surface transition-colors duration-150 ease-nothing hover:bg-primary [&_svg]:size-[16px]";
+  "flex w-full items-center justify-center border-b border-white/10 py-3 bg-slate-700 text-surface transition-colors duration-150 ease-nothing hover:bg-primary [&_svg]:size-[16px]";
 
 async function refresh() {
   store.setConversations(await listConversations());
