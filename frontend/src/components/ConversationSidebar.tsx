@@ -1,5 +1,15 @@
-import { useEffect } from "react";
-import { PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  BookOpen,
+  ExternalLink,
+  FileText,
+  Github,
+  Info,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import {
   createConversation,
   deleteConversation,
@@ -11,6 +21,28 @@ import {
   useSelectedConversationId,
   useTurnSeq,
 } from "../store";
+import { DocsModal, type DocView } from "./DocsModal";
+
+const REPO_URL = "https://github.com/funinkina/nimble-thimble";
+
+type FootItem = {
+  key: DocView | "github";
+  label: string;
+  icon: typeof FileText;
+  href?: string;
+};
+
+const FOOT_ITEMS: FootItem[] = [
+  { key: "design", label: "Design", icon: FileText },
+  { key: "readme", label: "Readme", icon: BookOpen },
+  { key: "github", label: "GitHub", icon: Github, href: REPO_URL },
+  { key: "about", label: "About", icon: Info },
+];
+
+const FOOT_BTN =
+  "flex w-full items-center gap-2.5 border-b border-white/10 px-4 py-2.5 font-mono text-label uppercase bg-ink text-surface transition-colors duration-150 ease-nothing hover:bg-primary [&_svg]:size-[15px]";
+const FOOT_BTN_COLLAPSED =
+  "flex w-full items-center justify-center border-b border-white/10 py-3 bg-ink text-surface transition-colors duration-150 ease-nothing hover:bg-primary [&_svg]:size-[16px]";
 
 async function refresh() {
   store.setConversations(await listConversations());
@@ -39,6 +71,37 @@ export function ConversationSidebar({
   const conversations = useConversations();
   const selected = useSelectedConversationId();
   const turnSeq = useTurnSeq();
+  const [doc, setDoc] = useState<DocView>(null);
+
+  function openFoot(it: FootItem) {
+    if (it.href) window.open(it.href, "_blank", "noopener,noreferrer");
+    else setDoc(it.key as DocView);
+  }
+
+  const footer = (compact: boolean) => (
+    <footer className="flex-none flex flex-col border-t border-border">
+      {FOOT_ITEMS.map((it) => {
+        const Icon = it.icon;
+        return (
+          <button
+            key={it.key}
+            className={compact ? FOOT_BTN_COLLAPSED : FOOT_BTN}
+            onClick={() => openFoot(it)}
+            title={it.label}
+          >
+            <Icon strokeWidth={1.5} />
+            {!compact && it.label}
+            {!compact && it.href && (
+              <ExternalLink
+                strokeWidth={1.5}
+                className="ml-auto size-3 text-surface/50"
+              />
+            )}
+          </button>
+        );
+      })}
+    </footer>
+  );
 
   // Bootstrap: load the list, create the first chat if the DB is empty, and
   // select one if nothing is selected yet.
@@ -112,6 +175,8 @@ export function ConversationSidebar({
             <Plus strokeWidth={1.5} />
           </button>
         </div>
+        {footer(true)}
+        <DocsModal view={doc} onClose={() => setDoc(null)} />
       </section>
     );
   }
@@ -164,6 +229,8 @@ export function ConversationSidebar({
           ))
         )}
       </div>
+      {footer(false)}
+      <DocsModal view={doc} onClose={() => setDoc(null)} />
     </section>
   );
 }

@@ -8,14 +8,14 @@ per-turn pipeline traces, and live metrics are all visible in the UI; nothing is
 hidden in a log.
 
 ```
-┌──────────────┐   user turn    ┌──────────────────────────────────────────────┐
+┌──────────────┐   user turn    ┌────────────────────────────────────────────────┐
 │   React UI   │ ─────────────▶ │  FastAPI pipeline (one pass per turn)          │
 │  (Nothing    │                │                                                │
 │   design,    │ ◀───────────── │  extract → embed → dedup → conflict/supersede  │
 │   3 panes)   │  reply +       │     → write → retrieve → reply                 │
 └──────────────┘  events +      │                                                │
                   retrieved     │  every stage writes a trace row                │
-                                └──────────────────────────────────────────────┘
+                                └────────────────────────────────────────────────┘
                                    SQLite + sqlite-vec   |   fastembed (local)
                                    Groq (gpt-oss)
 ```
@@ -33,13 +33,13 @@ The design rationale, state machine, and trade-offs are in [DESIGN.md](DESIGN.md
 
 ## Stack
 
-| Layer      | Choice                                                               | Why                                                               |
-| ---------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Backend    | FastAPI (Python)                                                     | async API, Pydantic doubles as the LLM structured-output contract |
-| Store      | SQLite + `sqlite-vec`                                                | one file, zero infra — vectors + relational + trace data together |
-| Embeddings | `fastembed` (BAAI/bge-small-en-v1.5, 384-d)                          | local, free, no second API key                                    |
+| Layer      | Choice                                                                  | Why                                                                         |
+| ---------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Backend    | FastAPI (Python)                                                        | async API, Pydantic doubles as the LLM structured-output contract           |
+| Store      | SQLite + `sqlite-vec`                                                   | one file, zero infra — vectors + relational + trace data together           |
+| Embeddings | `fastembed` (BAAI/bge-small-en-v1.5, 384-d)                             | local, free, no second API key                                              |
 | LLM        | Groq — `openai/gpt-oss-120b` (replies), `openai/gpt-oss-20b` (judgment) | Chat Completions `json_schema` structured output makes judgment inspectable |
-| Frontend   | React + Vite + TS + assistant-ui                                     | streaming chat primitives; Nothing-design light theme             |
+| Frontend   | React + Vite + TS + assistant-ui                                        | streaming chat primitives; Nothing-design light theme                       |
 
 ## Setup
 

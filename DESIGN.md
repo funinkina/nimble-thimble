@@ -179,4 +179,3 @@ needs no decoration.
   in `config.py` (swap in `openai/gpt-oss-120b` for judgment too if you want
   maximum reasoning). Embeddings stay local — switching the LLM provider touched
   only `llm.py` + `config.py`, nothing in the pipeline, store, or API contract.
-```

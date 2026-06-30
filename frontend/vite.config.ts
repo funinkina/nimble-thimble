@@ -6,5 +6,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    // allow importing the repo-root DESIGN.md / README.md as ?raw
+    fs: { allow: [".."] },
   },
 });
