@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
 import {
   createConversation,
   deleteConversation,
@@ -16,7 +16,13 @@ async function refresh() {
   store.setConversations(await listConversations());
 }
 
-export function ConversationSidebar() {
+export function ConversationSidebar({
+  collapsed,
+  onToggleCollapse,
+}: {
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+}) {
   const conversations = useConversations();
   const selected = useSelectedConversationId();
   const turnSeq = useTurnSeq();
@@ -62,13 +68,41 @@ export function ConversationSidebar() {
     }
   }
 
+  if (collapsed) {
+    return (
+      <section className="pane conv-sidebar collapsed">
+        <header className="pane-head">
+          <button
+            className="conv-icon-btn"
+            onClick={onToggleCollapse}
+            title="Expand chats"
+          >
+            <PanelLeftOpen strokeWidth={1.5} />
+          </button>
+        </header>
+        <button className="conv-icon-btn rail-new" onClick={newChat} title="New chat">
+          <Plus strokeWidth={1.5} />
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section className="pane conv-sidebar">
       <header className="pane-head">
         <span className="pane-title">Chats</span>
-        <button className="conv-new" onClick={newChat} title="New chat">
-          <Plus strokeWidth={1.5} />
-        </button>
+        <span className="conv-head-actions">
+          <button className="conv-icon-btn" onClick={newChat} title="New chat">
+            <Plus strokeWidth={1.5} />
+          </button>
+          <button
+            className="conv-icon-btn"
+            onClick={onToggleCollapse}
+            title="Collapse chats"
+          >
+            <PanelLeftClose strokeWidth={1.5} />
+          </button>
+        </span>
       </header>
       <div className="pane-body conv-list">
         {conversations.length === 0 ? (

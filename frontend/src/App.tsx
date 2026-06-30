@@ -64,10 +64,20 @@ function ChatColumn({ conversationId }: { conversationId: string }) {
 
 export default function App() {
   const conversationId = useSelectedConversationId();
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("sidebarCollapsed") === "1",
+  );
+
+  useEffect(() => {
+    localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+  }, [collapsed]);
 
   return (
-    <div className="app">
-      <ConversationSidebar />
+    <div className={`app${collapsed ? " sidebar-collapsed" : ""}`}>
+      <ConversationSidebar
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
+      />
       {conversationId ? (
         <ChatColumn key={conversationId} conversationId={conversationId} />
       ) : (

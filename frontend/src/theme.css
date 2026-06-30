@@ -132,7 +132,13 @@ textarea {
 /* ============================================================ */
 /* conversation sidebar                                         */
 /* ============================================================ */
-.conv-new {
+.conv-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.conv-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -145,13 +151,25 @@ textarea {
   transition: border-color 150ms var(--ease), color 150ms var(--ease),
     background 150ms var(--ease);
 }
-.conv-new:hover {
+.conv-icon-btn:hover {
   border-color: var(--text-display);
   color: var(--text-display);
 }
-.conv-new svg {
+.conv-icon-btn svg {
   width: 15px;
   height: 15px;
+}
+
+/* collapsed rail */
+.app.sidebar-collapsed {
+  grid-template-columns: 52px minmax(360px, 1.1fr) minmax(420px, 1.4fr) minmax(380px, 1fr);
+}
+.conv-sidebar.collapsed .pane-head {
+  justify-content: center;
+  padding: var(--sp-3) 0;
+}
+.conv-sidebar.collapsed .rail-new {
+  margin: var(--sp-2) auto 0;
 }
 
 .conv-list {
