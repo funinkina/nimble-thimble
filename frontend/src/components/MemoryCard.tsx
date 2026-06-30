@@ -179,7 +179,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   return (
     <article
       ref={ref}
-      className={`flex flex-col border-b border-border bg-surface animate-fade transition-colors duration-300 ease-nothing ${touchedEvent ? `border-l-2 ${EVENT_BORDER[touchedEvent]}` : ""
+      className={`flex flex-col border-b mt-4 border-border bg-surface animate-fade transition-colors duration-300 ease-nothing ${touchedEvent ? `border-l-2 ${EVENT_BORDER[touchedEvent]}` : ""
         } ${flashing ? "bg-raised ring-2 ring-inset ring-accent" : ""}`}
     >
       <div className="flex flex-col gap-4 px-6 py-4">

@@ -92,15 +92,11 @@
     margin: 0;
   }
 
-  /* off-white technical-manual page + subtle on-brand dot grid */
+  /* off-white technical-manual page */
   body {
     font-family: var(--font-sans);
     color: var(--color-primary);
     background-color: var(--color-page);
-    background-image: radial-gradient(circle,
-        var(--color-line) 1px,
-        transparent 1px);
-    background-size: 16px 16px;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }

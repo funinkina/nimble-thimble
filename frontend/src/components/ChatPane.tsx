@@ -167,11 +167,13 @@ function AssistantMessage() {
           <Bot strokeWidth={1.5} />
           ASSISTANT
         </div>
-        <MemoryBadge />
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <TurnEvents />
+          <MemoryBadge />
+        </div>
       </div>
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
       <Thinking />
-      <TurnEvents />
     </MessagePrimitive.Root>
   );
 }

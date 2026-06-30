@@ -43,7 +43,7 @@ function ChangedStrip() {
         {events.map((e, i) => (
           <button
             key={`${e.memory_id}-${i}`}
-            className={`flex items-baseline gap-2 border-l-2 px-6 py-1.5 text-left transition-colors duration-150 ease-nothing cursor-pointer hover:bg-raised ${EVENT_STRIP_TONE[e.type]}`}
+            className={`flex items-baseline border-l-2 px-6 py-1.5 text-left transition-colors duration-150 ease-nothing cursor-pointer hover:bg-raised ${EVENT_STRIP_TONE[e.type]}`}
             title={`Highlight ${e.memory_id.slice(0, 8)} in the inspector`}
             onClick={() => store.highlightMemory(e.memory_id)}
           >

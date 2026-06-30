@@ -9,10 +9,10 @@ hidden in a log.
 
 ```
 ┌──────────────┐   user turn    ┌────────────────────────────────────────────────┐
-│   React UI   │ ─────────────▶ │  FastAPI pipeline (one pass per turn)          │
-│  (Nothing    │                │                                                │
-│   design,    │ ◀───────────── │  extract → embed → dedup → conflict/supersede  │
-│   3 panes)   │  reply +       │     → write → retrieve → reply                 │
+│              │ ─────────────▶ │  FastAPI pipeline (one pass per turn)          │
+│   React UI   │                │                                                │
+│              │ ◀───────────── │  extract → embed → dedup → conflict/supersede  │
+│              │  reply +       │     → write → retrieve → reply                 │
 └──────────────┘  events +      │                                                │
                   retrieved     │  every stage writes a trace row                │
                                 └────────────────────────────────────────────────┘
