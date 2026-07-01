@@ -10,6 +10,7 @@ so the decision is a typed object, not free text. Every call returns
 from __future__ import annotations
 
 import time
+from functools import lru_cache
 from typing import Any, Iterator, Type
 
 from groq import Groq
@@ -50,6 +51,7 @@ def client() -> Groq:
 # Groq strict json_schema requires every property to be in `required` and every
 # object to set additionalProperties:false. Pydantic omits defaulted fields from
 # `required`, so we recompute it from the property set.
+@lru_cache(maxsize=None)
 def _groq_schema(model: Type[BaseModel]) -> dict:
     raw = model.model_json_schema()
     defs = raw.get("$defs", {})
@@ -97,12 +99,24 @@ def _strip_fences(text: str) -> str:
     return t.strip()
 
 
+def _cached_tokens(usage: Any) -> int:
+    """Groq (OpenAI-compat) reports prefix-cache hits at
+    usage.prompt_tokens_details.cached_tokens. Robust to object or dict shape."""
+    d = getattr(usage, "prompt_tokens_details", None)
+    if d is None:
+        return 0
+    if isinstance(d, dict):
+        return d.get("cached_tokens", 0) or 0
+    return getattr(d, "cached_tokens", 0) or 0
+
+
 def _meta(model_id: str, completion: Any, started: float) -> dict:
     u = getattr(completion, "usage", None)
     return {
         "model": model_id,
         "input_tokens": getattr(u, "prompt_tokens", 0) or 0,
         "output_tokens": getattr(u, "completion_tokens", 0) or 0,
+        "cached_tokens": _cached_tokens(u),
         "latency_ms": round((time.perf_counter() - started) * 1000, 1),
     }
 
@@ -225,31 +239,36 @@ def judge_conflict(candidate_text: str, neighbour_text: str) -> tuple[Judgment, 
 REPLY_FALLBACK = "Sorry — I had trouble generating a reply just now. Try again?"
 
 
-def _reply_prompt(user_msg: str, history: list[dict], memories: list[dict]) -> str:
+def _reply_messages(
+    user_msg: str, history: list[dict], memories: list[dict]
+) -> list[dict]:
+    """Real message array (not a flattened blob) so Groq prefix-caches the stable
+    head — [system] + prior turns — across turns of a conversation. Static REPLY_SYSTEM
+    stays at index 0; retrieval-dynamic memories ride the final user turn (the tail),
+    so they never invalidate the cached prefix."""
     mem_block = (
         "\n".join(f"- ({m['scope']}) {m['text']}" for m in memories)
         or "(none retrieved)"
     )
-    return (
-        f"Conversation so far:\n{_format_history(history)}\n\n"
-        f"MEMORIES about the user:\n{mem_block}\n\nUser message:\n{user_msg}"
+    msgs: list[dict] = [{"role": "system", "content": REPLY_SYSTEM}]
+    for m in history[-config.HISTORY_TURNS :]:
+        msgs.append({"role": m["role"], "content": m["content"]})
+    msgs.append(
+        {
+            "role": "user",
+            "content": f"MEMORIES about the user:\n{mem_block}\n\nUser message:\n{user_msg}",
+        }
     )
-
-
-def _reply_messages(prompt: str) -> list[dict]:
-    return [
-        {"role": "system", "content": REPLY_SYSTEM},
-        {"role": "user", "content": prompt},
-    ]
+    return msgs
 
 
 def reply(user_msg: str, history: list[dict], memories: list[dict]) -> tuple[str, dict]:
-    prompt = _reply_prompt(user_msg, history, memories)
+    messages = _reply_messages(user_msg, history, memories)
     started = time.perf_counter()
     try:
         completion = client().chat.completions.create(
             model=config.REPLY_MODEL,
-            messages=_reply_messages(prompt),
+            messages=messages,
             max_completion_tokens=config.REPLY_MAX_TOKENS,
         )
         meta = _meta(config.REPLY_MODEL, completion, started)
@@ -270,7 +289,7 @@ def reply_stream(
     final ("done", (full_text, meta)). Degrades like reply(): on any error it yields
     no deltas and a single ("done", (fallback, meta-with-error)) so the turn never
     500s. full_text from the "done" event is always authoritative."""
-    prompt = _reply_prompt(user_msg, history, memories)
+    messages = _reply_messages(user_msg, history, memories)
     started = time.perf_counter()
     parts: list[str] = []
     usage = None
@@ -278,7 +297,7 @@ def reply_stream(
     try:
         stream = client().chat.completions.create(
             model=config.REPLY_MODEL,
-            messages=_reply_messages(prompt),
+            messages=messages,
             max_completion_tokens=config.REPLY_MAX_TOKENS,
             stream=True,
         )
@@ -299,6 +318,7 @@ def reply_stream(
             "model": config.REPLY_MODEL,
             "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
             "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+            "cached_tokens": _cached_tokens(usage),
             "latency_ms": round((time.perf_counter() - started) * 1000, 1),
         }
         # finish_reason=="length" means we hit REPLY_MAX_TOKENS mid-reply — surface

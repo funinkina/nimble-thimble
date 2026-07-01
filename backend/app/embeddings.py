@@ -1,9 +1,8 @@
 """Local embeddings via fastembed. Vectors are L2-normalized so cosine = dot."""
 
 from __future__ import annotations
-
+from functools import lru_cache
 import numpy as np
-
 from . import config
 
 _model = None
@@ -32,8 +31,15 @@ def embed(texts: list[str]) -> list[list[float]]:
     return out
 
 
+@lru_cache(maxsize=2048)
+def _embed_one_cached(text: str) -> tuple[float, ...]:
+    return tuple(embed([text])[0])
+
+
 def embed_one(text: str) -> list[float]:
-    return embed([text])[0]
+    # deterministic (same text -> same vector); memoize repeated texts
+    # (re-asked queries, re-embed on edit) to skip the model forward pass.
+    return list(_embed_one_cached(text))
 
 
 def cosine(a: list[float], b: list[float]) -> float:
