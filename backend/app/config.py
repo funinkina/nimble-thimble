@@ -85,3 +85,50 @@ CORS_ORIGINS = [
     ).split(",")
     if o.strip()
 ]
+
+
+# --- runtime-editable settings registry (drives GET/PATCH /settings + the UI) ---
+# ONLY knobs read fresh on each call belong here — no embed model/dim (baked into
+# the vec vtable), no rerank model (loads once), no client-cached LLM_TIMEOUT, no
+# secrets. Each entry carries the bounds the API validates against and the metadata
+# the frontend renders. `min`/`max`/`step` apply to number types only.
+SETTINGS_SPEC: list[dict] = [
+    # Retrieval
+    {"key": "RETRIEVE_THRESHOLD", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "group": "Retrieval", "label": "Retrieve threshold", "help": "Min cosine for a memory to be eligible for retrieval."},
+    {"key": "TOP_K_RETRIEVE", "type": "int", "min": 1, "max": 20, "step": 1, "group": "Retrieval", "label": "Top-K retrieved", "help": "Memories injected into a reply."},
+    {"key": "VEC_OVERFETCH", "type": "int", "min": 1, "max": 200, "step": 1, "group": "Retrieval", "label": "Vec overfetch", "help": "Rows pulled from the vec index before status filtering."},
+    {"key": "VEC_PREFETCH", "type": "int", "min": 1, "max": 500, "step": 1, "group": "Retrieval", "label": "Vec prefetch", "help": "Raw vec rows fetched before conversation + status filtering."},
+    # Dedup & conflict
+    {"key": "DEDUP_THRESHOLD", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "group": "Dedup & conflict", "label": "Dedup threshold", "help": "At/above this cosine a candidate is a duplicate — no LLM call."},
+    {"key": "CONFLICT_LOW", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "group": "Dedup & conflict", "label": "Conflict floor", "help": "Below this, a neighbour is unrelated; above (and below dedup) the LLM judges."},
+    {"key": "FORGET_THRESHOLD", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "group": "Dedup & conflict", "label": "Forget match threshold", "help": "Min cosine for an explicit 'forget X' to match a memory."},
+    {"key": "TOP_K_CANDIDATES", "type": "int", "min": 1, "max": 20, "step": 1, "group": "Dedup & conflict", "label": "Top-K neighbours", "help": "Neighbours pulled per new candidate."},
+    {"key": "CONFIDENCE_STEP", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "group": "Dedup & conflict", "label": "Confidence step", "help": "Nudge toward 1.0 on reinforce: c + step*(1-c)."},
+    # Decay
+    {"key": "DECAY_HALF_LIFE_DAYS", "type": "float", "min": 0.1, "max": 365.0, "step": 0.5, "group": "Decay", "label": "Recency half-life (days)", "help": "Days for recency weight to halve."},
+    {"key": "USAGE_SATURATION", "type": "float", "min": 0.1, "max": 100.0, "step": 0.5, "group": "Decay", "label": "Usage saturation", "help": "use_count at which usage weight is ~saturated."},
+    {"key": "USAGE_BASE", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "group": "Decay", "label": "Usage base", "help": "Usage weight for a never-retrieved memory."},
+    {"key": "DECAY_FLOOR", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "group": "Decay", "label": "Decay floor", "help": "decay_score never drops below this."},
+    # Chat
+    {"key": "HISTORY_TURNS", "type": "int", "min": 1, "max": 50, "step": 1, "group": "Chat", "label": "History turns", "help": "Recent messages fed to extract() + reply()."},
+    {"key": "REPLY_MAX_TOKENS", "type": "int", "min": 256, "max": 8192, "step": 64, "group": "Chat", "label": "Reply max tokens", "help": "Cap on reply length."},
+    {"key": "LLM_RETRIES", "type": "int", "min": 0, "max": 5, "step": 1, "group": "Chat", "label": "LLM retries", "help": "Extra attempts on a bad/invalid structured response."},
+    # Hybrid retrieval
+    {"key": "USE_BM25", "type": "bool", "group": "Hybrid retrieval", "label": "Fuse BM25 (RRF)", "help": "Add sparse keyword search, fused with dense via RRF."},
+    {"key": "USE_RERANK", "type": "bool", "group": "Hybrid retrieval", "label": "Cross-encoder rerank", "help": "Rerank the shortlist with a local cross-encoder."},
+    {"key": "HYBRID_PREFETCH", "type": "int", "min": 1, "max": 200, "step": 1, "group": "Hybrid retrieval", "label": "Hybrid prefetch", "help": "Candidates each of vec + bm25 contribute before fusion."},
+    {"key": "RRF_K", "type": "int", "min": 1, "max": 200, "step": 1, "group": "Hybrid retrieval", "label": "RRF constant", "help": "Reciprocal-rank-fusion constant."},
+]
+
+EDITABLE_KEYS = [s["key"] for s in SETTINGS_SPEC]
+# Snapshot the code defaults NOW, before any DB override is applied at startup, so
+# "reset to defaults" restores the .env/literal values, not the last saved ones.
+SETTINGS_DEFAULTS = {k: globals()[k] for k in EDITABLE_KEYS}
+
+# Read-only context shown in the panel — not editable (would require a rebuild).
+INFO_FIELDS = [
+    {"key": "REPLY_MODEL", "label": "Reply model", "value": REPLY_MODEL},
+    {"key": "JUDGE_MODEL", "label": "Extract/judge model", "value": JUDGE_MODEL},
+    {"key": "EMBED_MODEL", "label": "Embedding model", "value": EMBED_MODEL},
+    {"key": "EMBED_DIM", "label": "Embedding dimensions", "value": EMBED_DIM},
+]

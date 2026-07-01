@@ -103,6 +103,11 @@ CREATE TABLE IF NOT EXISTS traces (
 
 CREATE INDEX IF NOT EXISTS idx_traces_message ON traces(message_id);
 CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 # Indexes on conversation_id are created in _migrate, after the column exists

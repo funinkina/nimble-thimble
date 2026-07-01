@@ -7,6 +7,8 @@ import type {
   Metrics,
   RestoredMessage,
   Scope,
+  SettingsResponse,
+  SettingValue,
   Trace,
 } from "./types";
 
@@ -116,4 +118,21 @@ export function getTraces(messageId: string): Promise<Trace[]> {
 
 export function getMetrics(conversationId: string): Promise<Metrics> {
   return req<Metrics>(`/metrics?conversation_id=${encodeURIComponent(conversationId)}`);
+}
+
+export function getSettings(): Promise<SettingsResponse> {
+  return req<SettingsResponse>("/settings");
+}
+
+export function patchSettings(
+  changes: Record<string, SettingValue>,
+): Promise<Record<string, SettingValue>> {
+  return req<Record<string, SettingValue>>("/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ changes }),
+  });
+}
+
+export function resetSettings(): Promise<Record<string, SettingValue>> {
+  return req<Record<string, SettingValue>>("/settings/reset", { method: "POST" });
 }

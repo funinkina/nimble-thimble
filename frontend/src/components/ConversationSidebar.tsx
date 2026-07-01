@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Settings,
   Trash2,
 } from "lucide-react";
 import {
@@ -22,17 +23,19 @@ import {
   useTurnSeq,
 } from "../store";
 import { DocsModal, type DocView } from "./DocsModal";
+import { SettingsModal } from "./SettingsModal";
 
 const REPO_URL = "https://github.com/funinkina/nimble-thimble";
 
 type FootItem = {
-  key: DocView | "github";
+  key: DocView | "github" | "settings";
   label: string;
   icon: typeof FileText;
   href?: string;
 };
 
 const FOOT_ITEMS: FootItem[] = [
+  { key: "settings", label: "Settings", icon: Settings },
   { key: "design", label: "Design", icon: FileText },
   { key: "readme", label: "Readme", icon: BookOpen },
   { key: "github", label: "GitHub", icon: Github, href: REPO_URL },
@@ -72,11 +75,13 @@ export function ConversationSidebar({
   const selected = useSelectedConversationId();
   const turnSeq = useTurnSeq();
   const [doc, setDoc] = useState<DocView>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootAttempt, setBootAttempt] = useState(0);
 
   function openFoot(it: FootItem) {
     if (it.href) window.open(it.href, "_blank", "noopener,noreferrer");
+    else if (it.key === "settings") setSettingsOpen(true);
     else setDoc(it.key as DocView);
   }
 
@@ -187,6 +192,7 @@ export function ConversationSidebar({
         </div>
         {footer(true)}
         <DocsModal view={doc} onClose={() => setDoc(null)} />
+        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </section>
     );
   }

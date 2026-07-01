@@ -217,6 +217,34 @@ export interface Conversation {
   updated_at: string;
 }
 
+// ---- runtime-editable settings (mirror of config.SETTINGS_SPEC) ----
+export type SettingType = "float" | "int" | "bool";
+export type SettingValue = number | boolean;
+
+export interface SettingSpec {
+  key: string;
+  type: SettingType;
+  group: string;
+  label: string;
+  help: string;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+export interface SettingsInfo {
+  key: string;
+  label: string;
+  value: string | number;
+}
+
+export interface SettingsResponse {
+  spec: SettingSpec[];
+  values: Record<string, SettingValue>;
+  defaults: Record<string, SettingValue>;
+  info: SettingsInfo[];
+}
+
 // One message replayed into the runtime when restoring a chat. Assistant rows
 // carry the owning user turn's id + retrieved refs to rebuild the badge/trace.
 export interface RestoredMessage {
