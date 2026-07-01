@@ -10,7 +10,7 @@ import type {
   Trace,
 } from "./types";
 
-const BASE = "http://localhost:8000";
+const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
@@ -55,20 +55,22 @@ export function getMemories(
   conversationId: string,
   status?: MemoryStatus,
   scope?: Scope,
+  signal?: AbortSignal,
 ): Promise<Memory[]> {
   const q = new URLSearchParams({ conversation_id: conversationId });
   if (status) q.set("status", status);
   if (scope) q.set("scope", scope);
-  return req<Memory[]>(`/memories?${q.toString()}`);
+  return req<Memory[]>(`/memories?${q.toString()}`, { signal });
 }
 
 // Full-text search across all statuses, ranked by BM25 (backend FTS index).
 export function searchMemories(
   conversationId: string,
   q: string,
+  signal?: AbortSignal,
 ): Promise<Memory[]> {
   const p = new URLSearchParams({ conversation_id: conversationId, q });
-  return req<Memory[]>(`/memories/search?${p.toString()}`);
+  return req<Memory[]>(`/memories/search?${p.toString()}`, { signal });
 }
 
 export function getMemoryRevisions(id: string): Promise<MemoryRevision[]> {

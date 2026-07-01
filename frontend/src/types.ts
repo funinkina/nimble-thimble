@@ -197,6 +197,19 @@ export interface TurnMeta {
   memory_events: MemoryEvent[];
 }
 
+// Narrow the opaque metadata.custom blob back to a TurnMeta instead of a blind
+// double-cast — returns undefined for streaming/incomplete messages. Returns the
+// SAME object reference when valid (never a rebuilt one): this runs inside a
+// useMessage selector backed by useSyncExternalStore, which compares by identity,
+// so a fresh object every call would loop until "Maximum update depth exceeded".
+export function asTurnMeta(v: unknown): TurnMeta | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const m = v as Record<string, unknown>;
+  if (typeof m.message_id !== "string" || !Array.isArray(m.retrieved)) return undefined;
+  if (!Array.isArray(m.memory_events)) return undefined;
+  return v as TurnMeta;
+}
+
 export interface Conversation {
   id: string;
   title: string;

@@ -1,8 +1,11 @@
 """Local embeddings via fastembed. Vectors are L2-normalized so cosine = dot."""
 
 from __future__ import annotations
+
 from functools import lru_cache
+
 import numpy as np
+
 from . import config
 
 _model = None

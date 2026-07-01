@@ -50,7 +50,7 @@ function ChangedStrip() {
             <span className="w-3 flex-none text-center font-mono text-body-sm">
               {EVENT_GLYPH[e.type]}
             </span>
-            <span className="w-[84px] flex-none font-mono text-label uppercase">
+            <span className="w-21 flex-none font-mono text-label uppercase">
               {e.type}
             </span>
             <span className="min-w-0 flex-1 truncate font-sans text-body-sm leading-[1.4] text-muted">
@@ -127,6 +127,7 @@ export function MemoryPanel() {
       return;
     }
     let live = true;
+    const ctrl = new AbortController();
     setLoading(true);
     const q = debounced.trim();
     const started = performance.now();
@@ -134,11 +135,12 @@ export function MemoryPanel() {
     // flash "no results" before the eye registers it was even searching.
     const minMs = q ? 300 : 0;
     const load = q
-      ? searchMemories(conversationId, q)
+      ? searchMemories(conversationId, q, ctrl.signal)
       : getMemories(
         conversationId,
         status === "all" ? undefined : status,
         scope === "all" ? undefined : scope,
+        ctrl.signal,
       );
     load
       .then((m) => {
@@ -147,7 +149,8 @@ export function MemoryPanel() {
         setError(null);
       })
       .catch((e: unknown) => {
-        if (!live) return;
+        // Aborted requests (stale keystroke / unmount) are expected, not errors.
+        if (!live || (e instanceof DOMException && e.name === "AbortError")) return;
         setError(e instanceof Error ? e.message : "failed to load");
       })
       .finally(() => {
@@ -157,6 +160,7 @@ export function MemoryPanel() {
       });
     return () => {
       live = false;
+      ctrl.abort();
     };
   }, [status, scope, debounced, turnSeq, conversationId]);
 
@@ -173,7 +177,7 @@ export function MemoryPanel() {
   return (
     <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
       <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-raised">
-        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-4.5 [&_svg]:text-ink">
           <Brain strokeWidth={2.25} />
           Memory
         </span>
@@ -188,6 +192,8 @@ export function MemoryPanel() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search all memories…"
+          aria-label="Search memories"
+          aria-busy={searchBusy}
           className="min-w-0 flex-1 bg-transparent font-sans text-body-sm text-ink outline-none placeholder:text-faint"
         />
         {searchBusy ? (

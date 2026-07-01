@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import sqlite_vec
 
@@ -22,8 +22,18 @@ from .models import (
 )
 
 
+def _loads(payload) -> dict:
+    """Trace payloads are ones we wrote via json.dumps, but a truncated/corrupt row
+    shouldn't 500 a whole endpoint. Return {} on any decode failure."""
+    try:
+        v = json.loads(payload)
+        return v if isinstance(v, dict) else {}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}
+
+
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _id() -> str:
@@ -70,9 +80,7 @@ def set_conversation_title(cid: str, title: str) -> None:
 
 def touch_conversation(cid: str) -> None:
     db.write(
-        lambda c: c.execute(
-            "UPDATE conversations SET updated_at=? WHERE id=?", (now_iso(), cid)
-        )
+        lambda c: c.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now_iso(), cid))
     )
 
 
@@ -123,12 +131,13 @@ def recent_messages(limit: int, conversation_id: str) -> list[dict]:
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 
-def messages_for(conversation_id: str) -> list[dict]:
-    """Full ordered history for one conversation, for restore on the client."""
+def messages_for(conversation_id: str, limit: int = 1000, offset: int = 0) -> list[dict]:
+    """Ordered history for one conversation, for restore on the client. Bounded so a
+    pathologically long thread can't force the whole transcript into memory at once."""
     rows = db.query(
         "SELECT id, role, content FROM messages WHERE conversation_id=? "
-        "ORDER BY created_at ASC, rowid ASC",
-        (conversation_id,),
+        "ORDER BY created_at ASC, rowid ASC LIMIT ? OFFSET ?",
+        (conversation_id, limit, offset),
     )
     return [dict(r) for r in rows]
 
@@ -185,9 +194,7 @@ def add_memory(
             "INSERT INTO vec_memories(memory_id, embedding) VALUES (?, ?)",
             (mem_id, blob),
         )
-        c.execute(
-            "INSERT INTO memories_fts(memory_id, text) VALUES (?, ?)", (mem_id, text)
-        )
+        c.execute("INSERT INTO memories_fts(memory_id, text) VALUES (?, ?)", (mem_id, text))
 
     db.write(_do)
     return mem_id
@@ -240,9 +247,7 @@ def update_text(mem_id: str, text: str, embedding: list[float]) -> None:
             (mem_id, blob),
         )
         c.execute("DELETE FROM memories_fts WHERE memory_id=?", (mem_id,))
-        c.execute(
-            "INSERT INTO memories_fts(memory_id, text) VALUES (?,?)", (mem_id, text)
-        )
+        c.execute("INSERT INTO memories_fts(memory_id, text) VALUES (?,?)", (mem_id, text))
 
     db.write(_do)
 
@@ -280,9 +285,7 @@ def revise_memory(
             (mem_id, blob),
         )
         c.execute("DELETE FROM memories_fts WHERE memory_id=?", (mem_id,))
-        c.execute(
-            "INSERT INTO memories_fts(memory_id, text) VALUES (?,?)", (mem_id, text)
-        )
+        c.execute("INSERT INTO memories_fts(memory_id, text) VALUES (?,?)", (mem_id, text))
 
     db.write(_do)
 
@@ -379,9 +382,7 @@ def list_revisions(memory_id: str) -> list[MemoryRevisionOut]:
 
 
 def revision_count(memory_id: str) -> int:
-    r = db.query_one(
-        "SELECT COUNT(*) AS n FROM memory_revisions WHERE memory_id=?", (memory_id,)
-    )
+    r = db.query_one("SELECT COUNT(*) AS n FROM memory_revisions WHERE memory_id=?", (memory_id,))
     return r["n"] if r else 0
 
 
@@ -399,9 +400,7 @@ def get_row(mem_id: str):
     return db.query_one("SELECT * FROM memories WHERE id=?", (mem_id,))
 
 
-def knn(
-    embedding: list[float], k: int, conversation_id: str
-) -> list[tuple[str, float]]:
+def knn(embedding: list[float], k: int, conversation_id: str) -> list[tuple[str, float]]:
     """Return up to k [(memory_id, cosine_similarity)] nearest first, scoped to
     one conversation. The vec0 index can't join on memories.conversation_id, so
     over-fetch VEC_PREFETCH raw neighbours and filter to the conversation here."""
@@ -412,12 +411,22 @@ def knn(
         "SELECT memory_id, distance FROM vec_memories WHERE embedding MATCH ? AND k = ? ORDER BY distance",
         (blob, max(k, VEC_PREFETCH)),
     )
+    if not rows:
+        return []
+    # One batch lookup instead of a query per neighbour (was N+1). Keep only ids
+    # owned by this conversation, preserving vec's distance ordering.
+    ids = [r["memory_id"] for r in rows]
+    placeholders = ",".join("?" * len(ids))
+    owned = {
+        row["id"]
+        for row in db.query(
+            f"SELECT id FROM memories WHERE conversation_id=? AND id IN ({placeholders})",
+            (conversation_id, *ids),
+        )
+    }
     out: list[tuple[str, float]] = []
     for r in rows:
-        owner = db.query_one(
-            "SELECT conversation_id FROM memories WHERE id=?", (r["memory_id"],)
-        )
-        if owner and owner["conversation_id"] == conversation_id:
+        if r["memory_id"] in owned:
             out.append((r["memory_id"], 1.0 - r["distance"]))
             if len(out) >= k:
                 break
@@ -469,12 +478,13 @@ def list_memories(
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY created_at DESC, rowid DESC"
-    return [row_to_out(r) for r in db.query(sql, tuple(params))]
+    sup, rev = _out_maps(conversation_id)
+    return [
+        row_to_out(r, sup.get(r["id"]), rev.get(r["id"], 1)) for r in db.query(sql, tuple(params))
+    ]
 
 
-def search_memories(
-    conversation_id: str, query: str, limit: int = 50
-) -> list[MemoryOut]:
+def search_memories(conversation_id: str, query: str, limit: int = 50) -> list[MemoryOut]:
     """Full-text search over the BM25 index, across ALL statuses (active, updated,
     superseded, forgotten) so the inspector can find any memory regardless of state.
     Best-match first. Empty when the query has no indexable tokens or nothing hits."""
@@ -487,11 +497,21 @@ def search_memories(
         "ORDER BY bm25(memories_fts) LIMIT ?",
         (match, conversation_id, limit),
     )
-    return [row_to_out(r) for r in rows]
+    sup, rev = _out_maps(conversation_id)
+    return [row_to_out(r, sup.get(r["id"]), rev.get(r["id"], 1)) for r in rows]
 
 
-def row_to_out(r) -> MemoryOut:
-    by = db.query_one("SELECT id FROM memories WHERE supersedes_id=?", (r["id"],))
+_UNSET = object()
+
+
+def row_to_out(r, superseded_by=_UNSET, rev_count=_UNSET) -> MemoryOut:
+    # Single-row callers let these default (one extra query each); list/search pass
+    # precomputed maps so the whole page costs 2 queries, not 2 per row (was N+1).
+    if superseded_by is _UNSET:
+        by = db.query_one("SELECT id FROM memories WHERE supersedes_id=?", (r["id"],))
+        superseded_by = by["id"] if by else None
+    if rev_count is _UNSET:
+        rev_count = revision_count(r["id"])
     return MemoryOut(
         id=r["id"],
         text=r["text"],
@@ -502,7 +522,7 @@ def row_to_out(r) -> MemoryOut:
         reason=r["reason"],
         confidence=r["confidence"],
         supersedes_id=r["supersedes_id"],
-        superseded_by=by["id"] if by else None,
+        superseded_by=superseded_by,
         pinned=bool(r["pinned"]),
         use_count=r["use_count"],
         last_used_at=r["last_used_at"],
@@ -511,14 +531,35 @@ def row_to_out(r) -> MemoryOut:
         decay_score=decay.decay_score(
             r["last_used_at"], r["created_at"], r["use_count"], pinned=bool(r["pinned"])
         ),
-        revision_count=revision_count(r["id"]),
+        revision_count=rev_count,
     )
 
 
+def _out_maps(conversation_id: str) -> tuple[dict[str, str], dict[str, int]]:
+    """Bulk (superseded_by, revision_count) maps for a conversation's memories, so a
+    list/search page turns 2N per-row queries into 2 total."""
+    sup = {
+        row["supersedes_id"]: row["id"]
+        for row in db.query(
+            "SELECT id, supersedes_id FROM memories "
+            "WHERE conversation_id=? AND supersedes_id IS NOT NULL",
+            (conversation_id,),
+        )
+    }
+    rev = {
+        row["memory_id"]: row["n"]
+        for row in db.query(
+            "SELECT mr.memory_id AS memory_id, COUNT(*) AS n FROM memory_revisions mr "
+            "JOIN memories m ON m.id = mr.memory_id WHERE m.conversation_id=? "
+            "GROUP BY mr.memory_id",
+            (conversation_id,),
+        )
+    }
+    return sup, rev
+
+
 # ---- traces ----
-def add_trace(
-    message_id: str, stage: str, payload: dict, conversation_id: str
-) -> None:
+def add_trace(message_id: str, stage: str, payload: dict, conversation_id: str) -> None:
     db.write(
         lambda c: c.execute(
             "INSERT INTO traces(id, conversation_id, message_id, stage, payload, created_at) VALUES (?,?,?,?,?,?)",
@@ -541,7 +582,7 @@ def retrieved_by_user_message(conversation_id: str) -> dict[str, list[dict]]:
         "SELECT message_id, payload FROM traces WHERE conversation_id=? AND stage='retrieve'",
         (conversation_id,),
     )
-    return {r["message_id"]: json.loads(r["payload"]).get("retrieved", []) for r in rows}
+    return {r["message_id"]: _loads(r["payload"]).get("retrieved", []) for r in rows}
 
 
 def events_by_user_message(conversation_id: str) -> dict[str, list[dict]]:
@@ -552,7 +593,7 @@ def events_by_user_message(conversation_id: str) -> dict[str, list[dict]]:
         "SELECT message_id, payload FROM traces WHERE conversation_id=? AND stage='reply'",
         (conversation_id,),
     )
-    return {r["message_id"]: json.loads(r["payload"]).get("events", []) for r in rows}
+    return {r["message_id"]: _loads(r["payload"]).get("events", []) for r in rows}
 
 
 def traces_for(message_id: str) -> list[TraceOut]:
@@ -565,7 +606,7 @@ def traces_for(message_id: str) -> list[TraceOut]:
             id=r["id"],
             message_id=r["message_id"],
             stage=r["stage"],
-            payload=json.loads(r["payload"]),
+            payload=_loads(r["payload"]),
             created_at=r["created_at"],
         )
         for r in rows
@@ -573,7 +614,5 @@ def traces_for(message_id: str) -> list[TraceOut]:
 
 
 def all_traces(conversation_id: str) -> list[dict]:
-    rows = db.query(
-        "SELECT stage, payload FROM traces WHERE conversation_id=?", (conversation_id,)
-    )
-    return [{"stage": r["stage"], "payload": json.loads(r["payload"])} for r in rows]
+    rows = db.query("SELECT stage, payload FROM traces WHERE conversation_id=?", (conversation_id,))
+    return [{"stage": r["stage"], "payload": _loads(r["payload"])} for r in rows]

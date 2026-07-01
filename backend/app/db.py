@@ -261,6 +261,12 @@ def connect() -> sqlite3.Connection:
         return _conn
     conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # WAL: readers don't block the single writer (and vice-versa) — matters since
+    # the chat pipeline holds the write lock across embed+LLM. busy_timeout: wait
+    # instead of instantly raising "database is locked" under contention.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)

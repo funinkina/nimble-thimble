@@ -72,6 +72,8 @@ export function ConversationSidebar({
   const selected = useSelectedConversationId();
   const turnSeq = useTurnSeq();
   const [doc, setDoc] = useState<DocView>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [bootAttempt, setBootAttempt] = useState(0);
 
   function openFoot(it: FootItem) {
     if (it.href) window.open(it.href, "_blank", "noopener,noreferrer");
@@ -108,19 +110,24 @@ export function ConversationSidebar({
   useEffect(() => {
     let live = true;
     (async () => {
-      let list = await listConversations();
-      if (!live) return;
-      if (list.length === 0) list = [await createConversation()];
-      if (!live) return;
-      store.setConversations(list);
-      if (!store.getState().selectedConversationId) {
-        store.selectConversation(list[0].id);
+      try {
+        let list = await listConversations();
+        if (!live) return;
+        if (list.length === 0) list = [await createConversation()];
+        if (!live) return;
+        store.setConversations(list);
+        setBootError(null);
+        if (!store.getState().selectedConversationId) {
+          store.selectConversation(list[0].id);
+        }
+      } catch (e: unknown) {
+        if (live) setBootError(e instanceof Error ? e.message : "cannot reach backend");
       }
     })();
     return () => {
       live = false;
     };
-  }, []);
+  }, [bootAttempt]);
 
   // Refresh titles/order after every turn (the first user message names the chat).
   useEffect(() => {
@@ -134,6 +141,9 @@ export function ConversationSidebar({
   }
 
   async function del(id: string) {
+    const c = conversations.find((x) => x.id === id);
+    if (!window.confirm(`Delete "${c?.title || "New chat"}"? This can't be undone.`))
+      return;
     await deleteConversation(id);
     const list = await listConversations();
     store.setConversations(list);
@@ -168,7 +178,7 @@ export function ConversationSidebar({
             </button>
           ))}
           <button
-            className={`${CELL} justify-center [&_svg]:size-[15px]`}
+            className={`${CELL} justify-center [&_svg]:size-3.75`}
             onClick={newChat}
             title="New chat"
           >
@@ -201,7 +211,19 @@ export function ConversationSidebar({
         </div>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto scroll-slim flex flex-col">
-        {conversations.length === 0 ? (
+        {bootError ? (
+          <div className="flex flex-col items-start gap-2 px-4 py-3">
+            <span className="font-mono text-body-sm tracking-[0.06em] text-accent">
+              [OFFLINE: {bootError}]
+            </span>
+            <button
+              className="border border-border px-3 py-1.5 font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing hover:bg-raised hover:text-ink"
+              onClick={() => setBootAttempt((a) => a + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        ) : conversations.length === 0 ? (
           <div className="px-4 py-3 font-mono text-body-sm tracking-[0.06em] text-faint">
             [NO CHATS]
           </div>
@@ -216,7 +238,7 @@ export function ConversationSidebar({
                 {c.title || "New chat"}
               </span>
               <button
-                className="flex-none inline-flex items-center text-faint opacity-0 transition-opacity duration-150 ease-nothing group-hover:opacity-100 hover:text-accent [&_svg]:size-[14px]"
+                className="flex-none inline-flex items-center text-faint opacity-0 transition-opacity duration-150 ease-nothing group-hover:opacity-100 hover:text-accent [&_svg]:size-3.5"
                 title="Delete chat"
                 onClick={(e) => {
                   e.stopPropagation();

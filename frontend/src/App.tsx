@@ -43,18 +43,39 @@ const PLACEHOLDER_TEXT = "m-4 font-mono text-body-sm tracking-[0.06em] text-fain
 
 function ChatColumn({ conversationId }: { conversationId: string }) {
   const [initial, setInitial] = useState<ThreadMessageLike[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
     setInitial(null);
+    setError(null);
     getConversationMessages(conversationId)
       .then((msgs) => live && setInitial(msgs.map(toThreadMessage)))
-      .catch(() => live && setInitial([]));
+      .catch(
+        (e: unknown) =>
+          live && setError(e instanceof Error ? e.message : "failed to load chat"),
+      );
     return () => {
       live = false;
     };
-  }, [conversationId]);
+  }, [conversationId, attempt]);
 
+  if (error !== null) {
+    return (
+      <section className={PANE_PLACEHOLDER}>
+        <div className="m-4 flex flex-col items-start gap-3">
+          <div className={PLACEHOLDER_TEXT}>[COULD NOT LOAD CHAT: {error}]</div>
+          <button
+            className="border border-border px-3 py-1.5 font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing hover:bg-raised hover:text-ink"
+            onClick={() => setAttempt((a) => a + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      </section>
+    );
+  }
   if (initial === null) {
     return (
       <section className={PANE_PLACEHOLDER}>

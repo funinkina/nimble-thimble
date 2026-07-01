@@ -75,3 +75,13 @@ LLM_RETRIES = int(
 )  # extra attempts on a bad/invalid response
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
+# --- server ---
+# Comma-separated allowed browser origins for CORS. Override per-deployment.
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if o.strip()
+]

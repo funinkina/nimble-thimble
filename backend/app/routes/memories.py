@@ -1,7 +1,7 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from .. import embeddings, memory, store
 from ..models import MemoryOut, MemoryRevisionOut, Status
@@ -17,7 +17,7 @@ def list_memories(
 
 
 @router.get("/memories/search", response_model=list[MemoryOut])
-def search_memories(conversation_id: str, q: str):
+def search_memories(conversation_id: str, q: str = Query(..., max_length=500)):
     # Full-text search across ALL statuses, ranked by BM25. Declared before the
     # /memories/{mem_id}/... routes so "search" isn't captured as a mem_id.
     return store.search_memories(conversation_id, q)
@@ -31,7 +31,7 @@ def memory_revisions(mem_id: str):
 
 
 class MemoryPatch(BaseModel):
-    text: Optional[str] = None
+    text: Optional[str] = Field(default=None, max_length=8000)
     forget: Optional[bool] = None
     pinned: Optional[bool] = None
 
@@ -69,7 +69,11 @@ def patch_memory(mem_id: str, body: MemoryPatch):
                     "conflict_text": other["text"] if other else None,
                 },
             )
-        store.update_text(mem_id, body.text, embeddings.embed_one(body.text))
+        try:
+            new_emb = embeddings.embed_one(body.text)
+        except Exception as e:  # noqa: BLE001 - degrade like the pipeline, don't 500
+            raise HTTPException(503, "embedding unavailable, edit not saved") from e
+        store.update_text(mem_id, body.text, new_emb)
         store.add_revision(
             memory_id=mem_id,
             change_type="edited",

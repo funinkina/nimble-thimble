@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from .. import store
@@ -30,14 +30,18 @@ def create_conversation(body: ConversationCreate):
     "/conversations/{conversation_id}/messages",
     response_model=list[RestoredMessage],
 )
-def conversation_messages(conversation_id: str):
+def conversation_messages(
+    conversation_id: str,
+    limit: int = Query(1000, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
     if not store.get_conversation(conversation_id):
         raise HTTPException(404, "conversation not found")
     retrieved_by_msg = store.retrieved_by_user_message(conversation_id)
     events_by_msg = store.events_by_user_message(conversation_id)
     out: list[RestoredMessage] = []
     last_user_id: str | None = None
-    for m in store.messages_for(conversation_id):
+    for m in store.messages_for(conversation_id, limit=limit, offset=offset):
         if m["role"] == "user":
             last_user_id = m["id"]
             out.append(RestoredMessage(id=m["id"], role=m["role"], content=m["content"]))

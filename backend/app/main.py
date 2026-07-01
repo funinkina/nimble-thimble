@@ -1,15 +1,21 @@
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import db
+from . import config, db
 from .routes import chat, conversations, memories, metrics, traces
+
+log = logging.getLogger("glassbox")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.connect()  # init schema + load sqlite-vec before first request
+    if not config.GROQ_API_KEY:
+        # Surface the misconfig at boot, not on the first chat turn's 401.
+        log.warning("GROQ_API_KEY is not set — LLM calls (reply/extract/judge) will fail.")
     yield
 
 
@@ -17,7 +23,7 @@ app = FastAPI(title="GlassBox Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=config.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -25,6 +31,11 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
+    # Readiness, not just liveness: confirm the DB actually answers.
+    try:
+        db.query_one("SELECT 1 AS ok")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(503, "database unavailable") from e
     return {"ok": True}
 
 

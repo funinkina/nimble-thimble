@@ -6,9 +6,10 @@ import {
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Bot, Brain, MessageSquare, User } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, Brain, MessageSquare, User } from "lucide-react";
 import { store, useSelectedMessageId } from "../store";
 import type { MemoryEventType, TurnMeta } from "../types";
+import { asTurnMeta } from "../types";
 
 // Color is set on the message Root and inherited; this only shapes the
 // markdown-rendered HTML (paragraphs, lists, code, links) via child variants.
@@ -101,9 +102,7 @@ function EventChips({ meta }: { meta: TurnMeta }) {
 
 function MemoryBadge() {
   const selected = useSelectedMessageId();
-  const meta = useMessage(
-    (m) => m.metadata?.custom as unknown as TurnMeta | undefined,
-  );
+  const meta = useMessage((m) => asTurnMeta(m.metadata?.custom));
   const running = useMessage((m) => m.status?.type === "running");
   if (running || !meta) return null;
 
@@ -115,7 +114,7 @@ function MemoryBadge() {
   return (
     <div className="relative flex-none group">
       <button
-        className={`inline-flex items-center gap-1.5 rounded border bg-surface px-2 py-[3px] font-mono text-label cursor-pointer uppercase transition-colors duration-150 ease-nothing [&_svg]:size-3 ${tone}`}
+        className={`inline-flex items-center gap-1.5 rounded border bg-surface px-2 py-0.75 font-mono text-label cursor-pointer uppercase transition-colors duration-150 ease-nothing [&_svg]:size-3 ${tone}`}
         onClick={() => store.selectMessage(meta.message_id)}
         title="Show this turn's pipeline trace"
       >
@@ -124,7 +123,7 @@ function MemoryBadge() {
       </button>
       {n > 0 && (
         // Provenance popover: the actual memories behind this reply, no pane hop.
-        <div className="absolute right-0 top-full z-10 mt-1 hidden w-[300px] flex-col gap-1 rounded-md border border-line bg-surface p-2 shadow-[0_4px_16px_rgba(0,0,0,0.08)] group-hover:flex">
+        <div className="absolute right-0 top-full z-10 mt-1 hidden w-75 flex-col gap-1 rounded-md border border-line bg-surface p-2 shadow-[0_4px_16px_rgba(0,0,0,0.08)] group-hover:flex">
           <div className="px-1 pb-1 font-mono text-label uppercase text-faint">
             Memories behind this reply
           </div>
@@ -136,7 +135,7 @@ function MemoryBadge() {
               title="Highlight in the memory inspector"
             >
               <span className="font-mono text-label text-faint">{r.rank}</span>
-              <span className="flex-1 font-sans text-caption leading-[1.35] text-primary [overflow-wrap:anywhere]">
+              <span className="flex-1 font-sans text-caption leading-[1.35] text-primary wrap-anywhere">
                 {r.text}
               </span>
               <span className="font-mono text-label text-muted">
@@ -151,9 +150,7 @@ function MemoryBadge() {
 }
 
 function TurnEvents() {
-  const meta = useMessage(
-    (m) => m.metadata?.custom as unknown as TurnMeta | undefined,
-  );
+  const meta = useMessage((m) => asTurnMeta(m.metadata?.custom));
   const running = useMessage((m) => m.status?.type === "running");
   if (running || !meta) return null;
   return <EventChips meta={meta} />;
@@ -163,9 +160,7 @@ function TurnEvents() {
 // it as clickable chips so "why did it remember that" maps to a card without
 // opening the trace pane. Click flashes + scrolls the matching memory card.
 function GroundingChips() {
-  const meta = useMessage(
-    (m) => m.metadata?.custom as unknown as TurnMeta | undefined,
-  );
+  const meta = useMessage((m) => asTurnMeta(m.metadata?.custom));
   const running = useMessage((m) => m.status?.type === "running");
   if (running || !meta || meta.retrieved.length === 0) return null;
   return (
@@ -176,7 +171,7 @@ function GroundingChips() {
       {meta.retrieved.map((r) => (
         <button
           key={r.memory_id}
-          className="inline-flex max-w-[240px] items-center gap-1 rounded border border-line bg-surface px-1.5 py-0.5 font-sans text-caption text-muted transition-colors duration-150 ease-nothing cursor-pointer hover:border-interactive hover:text-interactive [&_svg]:size-3 [&_svg]:flex-none"
+          className="inline-flex max-w-60 items-center gap-1 rounded border border-line bg-surface px-1.5 py-0.5 font-sans text-caption text-muted transition-colors duration-150 ease-nothing cursor-pointer hover:border-interactive hover:text-interactive [&_svg]:size-3 [&_svg]:flex-none"
           title="Highlight the memory this reply drew on"
           onClick={() => store.highlightMemory(r.memory_id)}
         >
@@ -212,7 +207,7 @@ export function ChatPane() {
   return (
     <section className="flex flex-col min-h-0 min-w-0 border-r border-line bg-page">
       <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-raised">
-        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-4.5 [&_svg]:text-ink">
           <MessageSquare strokeWidth={2.25} />
           Chat
         </span>
@@ -237,14 +232,27 @@ export function ChatPane() {
             components={{ UserMessage, AssistantMessage }}
           />
         </ThreadPrimitive.Viewport>
+        <div className="relative">
+          {/* Shows only when scrolled away from the newest message. */}
+          <ThreadPrimitive.ScrollToBottom asChild>
+            <button
+              className="absolute -top-11 right-4 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 font-mono text-label uppercase text-muted shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-colors duration-150 ease-nothing hover:text-ink disabled:hidden [&_svg]:size-3"
+              aria-label="Scroll to latest message"
+            >
+              <ArrowDown strokeWidth={1.5} />
+              Latest
+            </button>
+          </ThreadPrimitive.ScrollToBottom>
+        </div>
         <ComposerPrimitive.Root className="flex-none flex items-stretch gap-4 border-t border-border bg-surface pl-6">
           <ComposerPrimitive.Input
             className="flex-1 resize-none border-none bg-transparent py-4 font-sans text-body leading-normal text-primary outline-none max-h-40 min-h-6 placeholder:text-faint"
             placeholder="Send a message..."
             autoFocus
+            spellCheck
             rows={1}
           />
-          <ComposerPrimitive.Send className="flex-none inline-flex items-center gap-1.5 rounded-none bg-ink px-6 font-mono text-label uppercase text-surface transition-opacity duration-150 ease-nothing hover:opacity-80 disabled:cursor-default disabled:bg-raised disabled:text-faint [&_svg]:size-[13px]">
+          <ComposerPrimitive.Send className="flex-none inline-flex items-center gap-1.5 rounded-none bg-ink px-6 font-mono text-label uppercase text-surface transition-opacity duration-150 ease-nothing hover:opacity-80 disabled:cursor-default disabled:bg-raised disabled:text-faint [&_svg]:size-3.25">
             SEND
             <ArrowUp strokeWidth={1.5} />
           </ComposerPrimitive.Send>

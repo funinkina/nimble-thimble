@@ -2,7 +2,7 @@ import json
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import memory
 from ..models import ChatResponse
@@ -11,8 +11,8 @@ router = APIRouter()
 
 
 class ChatIn(BaseModel):
-    message: str
-    conversation_id: str
+    message: str = Field(min_length=1, max_length=8000)
+    conversation_id: str = Field(min_length=1, max_length=64)
 
 
 @router.post("/chat", response_model=ChatResponse)

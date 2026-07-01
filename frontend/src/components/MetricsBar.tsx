@@ -119,7 +119,7 @@ function Metric({
   delta?: number;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 border-b border-border pb-[5px]">
+    <div className="flex items-baseline justify-between gap-2 border-b border-border pb-1.25">
       <span className={LABEL}>{label}</span>
       <span className="inline-flex items-baseline gap-1.5">
         {delta != null && delta !== 0 && (
@@ -204,12 +204,12 @@ export function MetricsBar() {
               </span>
             )}
           </span>
-          <span className="font-mono text-label uppercase tracking-[0.1em] text-muted">
+          <span className="font-mono text-label uppercase tracking-widest text-muted">
             ACTIVE MEMORIES
           </span>
         </div>
         {m && (
-          <div className="flex flex-1 min-w-[200px] flex-col gap-4">
+          <div className="flex flex-1 min-w-50 flex-col gap-4">
             <Dist
               title="BY STATUS"
               data={m.memories_by_status}

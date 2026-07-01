@@ -93,7 +93,10 @@ function wordDiff(from: string, to: string): DiffPart[] {
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (a[i] === b[j]) out.push({ t: a[i++], op: "same" }), j++;
+    if (a[i] === b[j]) {
+      out.push({ t: a[i++], op: "same" });
+      j++;
+    }
     else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({ t: a[i++], op: "del" });
     else out.push({ t: b[j++], op: "add" });
   }
@@ -126,6 +129,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   const [action, setAction] = useState<ActionState>({ kind: "idle" });
   const [showHistory, setShowHistory] = useState(false);
   const [revisions, setRevisions] = useState<MemoryRevision[] | null>(null);
+  const [revError, setRevError] = useState(false);
   const [flashing, setFlashing] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const highlightedId = useHighlightedMemoryId();
@@ -171,9 +175,10 @@ export function MemoryCard({ mem }: { mem: Memory }) {
   useEffect(() => {
     if (!showHistory || revisions) return;
     let live = true;
+    setRevError(false);
     getMemoryRevisions(mem.id)
       .then((r) => live && setRevisions(r))
-      .catch(() => live && setRevisions([]));
+      .catch(() => live && setRevError(true));
     return () => {
       live = false;
     };
@@ -254,7 +259,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         <div className="flex items-start justify-between gap-4">
           {editing ? (
             <textarea
-              className="w-full resize-y rounded-md border border-line bg-raised p-2 font-sans text-body leading-[1.45] text-ink outline-none min-h-[60px] focus:border-muted"
+              className="w-full resize-y rounded-md border border-line bg-raised p-2 font-sans text-body leading-[1.45] text-ink outline-none min-h-15 focus:border-muted"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               autoFocus
@@ -298,11 +303,10 @@ export function MemoryCard({ mem }: { mem: Memory }) {
                       ? "Pinned — protected from decay. Click to unpin."
                       : "Pin to protect this memory from decay."
                   }
-                  className={`ml-1 inline-flex cursor-pointer items-center gap-1 rounded px-2 py-[3px] font-mono text-label uppercase shadow-sm transition-colors duration-150 ease-nothing disabled:cursor-default disabled:opacity-50 [&_svg]:size-3 ${
-                    mem.pinned
+                  className={`ml-1 inline-flex cursor-pointer items-center gap-1 rounded px-2 py-0.75 font-mono text-label uppercase shadow-sm transition-colors duration-150 ease-nothing disabled:cursor-default disabled:opacity-50 [&_svg]:size-3 ${mem.pinned
                       ? "bg-interactive text-surface hover:opacity-85"
                       : "bg-raised text-muted ring-1 ring-inset ring-line hover:bg-line hover:text-primary"
-                  }`}
+                    }`}
                 >
                   <Pin
                     strokeWidth={1.5}
@@ -319,7 +323,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
           <div className="flex flex-wrap items-center gap-2">
             {mem.supersedes_id && (
               <button
-                className="inline-flex items-center gap-1 rounded border border-line bg-raised px-2 py-[3px] font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing cursor-pointer hover:border-ink hover:text-ink"
+                className="inline-flex items-center gap-1 rounded border border-line bg-raised px-2 py-0.75 font-mono text-label uppercase text-muted transition-colors duration-150 ease-nothing cursor-pointer hover:border-ink hover:text-ink"
                 onClick={() => store.highlightMemory(mem.supersedes_id!)}
                 title="Jump to the memory this one replaced"
               >
@@ -328,7 +332,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
             )}
             {mem.superseded_by && (
               <button
-                className="inline-flex items-center gap-1 rounded border border-accent bg-raised px-2 py-[3px] font-mono text-label uppercase text-accent transition-colors duration-150 ease-nothing cursor-pointer hover:opacity-70"
+                className="inline-flex items-center gap-1 rounded border border-accent bg-raised px-2 py-0.75 font-mono text-label uppercase text-accent transition-colors duration-150 ease-nothing cursor-pointer hover:opacity-70"
                 onClick={() => store.highlightMemory(mem.superseded_by!)}
                 title="Jump to the memory that replaced this one"
               >
@@ -339,7 +343,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         )}
 
         {mem.source_excerpt && (
-          <div className="flex flex-col gap-[3px]">
+          <div className="flex flex-col gap-0.75">
             <span className={LABEL}>Evidence</span>
             <span className="border-l-2 border-line pl-2 font-mono text-caption text-primary">
               &ldquo;{mem.source_excerpt}&rdquo;
@@ -348,7 +352,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         )}
 
         {mem.reason && (
-          <div className="flex flex-col gap-[3px]">
+          <div className="flex flex-col gap-0.75">
             <span className={LABEL}>Why</span>
             <span className="font-sans text-body-sm leading-[1.45] text-muted">
               {mem.reason}
@@ -359,7 +363,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
         {mem.revision_count > 1 && (
           <div className="flex flex-col gap-2">
             <button
-              className={`inline-flex items-center cursor-pointer gap-1.5 self-start rounded border px-2.5 py-1 font-mono text-label uppercase transition-colors duration-150 ease-nothing [&_svg]:size-[13px] ${showHistory
+              className={`inline-flex items-center cursor-pointer gap-1.5 self-start rounded border px-2.5 py-1 font-mono text-label uppercase transition-colors duration-150 ease-nothing [&_svg]:size-3.25 ${showHistory
                 ? "border-ink bg-raised text-primary"
                 : "border-line bg-raised text-primary hover:border-ink hover:bg-surface hover:text-ink"
                 }`}
@@ -375,7 +379,11 @@ export function MemoryCard({ mem }: { mem: Memory }) {
             </button>
             {showHistory && (
               <ol className="flex flex-col gap-2 border-l border-line pl-3">
-                {revisions === null ? (
+                {revError ? (
+                  <li className="font-mono text-label uppercase text-accent">
+                    History unavailable
+                  </li>
+                ) : revisions === null ? (
                   <li className="font-mono text-label uppercase text-faint">Loading…</li>
                 ) : (
                   [...revisions].reverse().map((rev) => (
@@ -443,7 +451,7 @@ export function MemoryCard({ mem }: { mem: Memory }) {
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-1 w-20 overflow-hidden rounded-full bg-raised">
                   <span
-                    className={`block h-full transition-[width] duration-[250ms] ease-nothing ${decayFill(decay)}`}
+                    className={`block h-full transition-[width] duration-250 ease-nothing ${decayFill(decay)}`}
                     style={{ width: `${Math.round(decay * 100)}%` }}
                   />
                 </span>

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Github, Globe, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -58,7 +58,7 @@ function About() {
           href={SITE}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 font-mono text-label uppercase text-interactive hover:underline [&_svg]:size-[15px]"
+          className="inline-flex items-center gap-2 font-mono text-label uppercase text-interactive hover:underline [&_svg]:size-3.75"
         >
           <Globe strokeWidth={1.5} /> funinkina.co.in
         </a>
@@ -66,7 +66,7 @@ function About() {
           href={PROFILE}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 font-mono text-label uppercase text-interactive hover:underline [&_svg]:size-[15px]"
+          className="inline-flex items-center gap-2 font-mono text-label uppercase text-interactive hover:underline [&_svg]:size-3.75"
         >
           <Github strokeWidth={1.5} /> github.com/funinkina
         </a>
@@ -74,7 +74,7 @@ function About() {
           href={REPO}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 font-mono text-label uppercase text-interactive hover:underline [&_svg]:size-[15px]"
+          className="inline-flex items-center gap-2 font-mono text-label uppercase text-interactive hover:underline [&_svg]:size-3.75"
         >
           <Github strokeWidth={1.5} /> nimble-thimble repo
         </a>
@@ -90,13 +90,38 @@ export function DocsModal({
   view: DocView;
   onClose: () => void;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!view) return;
+    const opener = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !panelRef.current) return;
+      // Trap Tab within the panel so focus can't wander behind the overlay.
+      const items = panelRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      );
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      opener?.focus(); // restore focus to whatever opened the modal
+    };
   }, [view, onClose]);
 
   if (!view) return null;
@@ -107,7 +132,12 @@ export function DocsModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[82vh] w-full max-w-[760px] flex-col border border-border bg-surface shadow-lg"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={TITLES[view]}
+        tabIndex={-1}
+        className="flex max-h-[82vh] w-full max-w-190 flex-col border border-border bg-surface shadow-lg outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex-none flex items-stretch justify-between border-b border-border">
@@ -115,7 +145,7 @@ export function DocsModal({
             {TITLES[view]}
           </span>
           <button
-            className="flex items-center justify-center self-stretch border-l border-border px-5 text-muted transition-colors duration-150 ease-nothing hover:bg-accent hover:text-surface [&_svg]:size-[18px]"
+            className="flex items-center justify-center self-stretch border-l border-border px-5 text-muted transition-colors duration-150 ease-nothing hover:bg-accent hover:text-surface [&_svg]:size-4.5"
             onClick={onClose}
             title="Close"
           >

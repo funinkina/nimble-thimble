@@ -242,7 +242,7 @@ function Retrieve({ p }: { p: RetrievePayload }) {
                   />
                   {row.status}
                 </span>
-                <span className="font-sans text-caption leading-[1.35] text-primary [overflow-wrap:anywhere]">
+                <span className="font-sans text-caption leading-[1.35] text-primary wrap-anywhere">
                   {row.text}
                 </span>
               </span>
@@ -360,17 +360,23 @@ export function TraceDrawer() {
   const turnSeq = useTurnSeq();
   const [traces, setTraces] = useState<Trace[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selected) {
       setTraces([]);
+      setError(null);
       return;
     }
     let live = true;
     setLoading(true);
+    setError(null);
     getTraces(selected)
       .then((t) => live && setTraces(t))
-      .catch(() => live && setTraces([]))
+      .catch(
+        (e: unknown) =>
+          live && setError(e instanceof Error ? e.message : "failed to load trace"),
+      )
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
@@ -383,7 +389,7 @@ export function TraceDrawer() {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <header className="flex-none flex items-baseline justify-between gap-4 px-6 py-4 border-b border-border bg-raised">
-        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-[18px] [&_svg]:text-ink">
+        <span className="inline-flex items-center gap-2 font-sans font-bold text-subheading text-ink tracking-[-0.01em] [&_svg]:size-4.5 [&_svg]:text-ink">
           <Workflow strokeWidth={2.25} />
           Pipeline Trace
         </span>
@@ -396,6 +402,10 @@ export function TraceDrawer() {
         {!selected ? (
           <div className="px-6 py-4 font-mono text-body-sm tracking-[0.06em] text-faint">
             [NO TURN SELECTED] — send a message or click a [MEMORIES USED] badge.
+          </div>
+        ) : error ? (
+          <div className="px-6 py-4 font-mono text-body-sm tracking-[0.06em] text-accent">
+            [TRACE UNAVAILABLE: {error}]
           </div>
         ) : loading && traces.length === 0 ? (
           <div className="px-6 py-4 font-mono text-body-sm tracking-[0.06em] text-faint">
