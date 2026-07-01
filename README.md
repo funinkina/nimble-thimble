@@ -29,6 +29,9 @@ The design rationale, state machine, and trade-offs are in [DESIGN.md](DESIGN.md
 
 Installs deps, then runs backend + frontend. Prompts for your Groq key if `backend/.env` doesn't have one and injects it for that run only. Ctrl-C stops both. Uses `uv` if you have it, otherwise builds a project-local `backend/.venv` with your own Python (3.12 or 3.13).
 
+> [!NOTE]
+> First run will download a small encoder model locally, so first request might take some time.
+
 ```bash
 ./run.sh                         # macOS / Linux
 ```
